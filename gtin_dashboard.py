@@ -227,31 +227,27 @@ def check_password():
     st.markdown("""
         <style>
         .login-wrapper {
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 80vh;
+            padding: 2rem 0;
         }
         .login-card {
-            background-color: #1e293b;
-            padding: 2.5rem;
-            border-radius: 0.5rem;
-            border: 1px solid #334155;
             max-width: 400px;
-            width: 100%;
+            margin: 0 auto;
         }
         .login-title {
             color: #60a5fa;
             font-size: 1.5rem;
             font-weight: 600;
             margin-bottom: 0.25rem;
-            text-align: center;
+            text-align: left;
         }
         .login-subtitle {
             color: #94a3b8;
             font-size: 0.9rem;
-            text-align: center;
-            margin-bottom: 2rem;
+            text-align: left;
+            margin-bottom: 1.5rem;
+        }
+        .stTextInput {
+            max-width: 300px;
         }
         </style>
     """, unsafe_allow_html=True)
@@ -285,6 +281,34 @@ def check_password():
     
     # Password incorrect - show again
     else:
+        st.markdown("""
+            <style>
+            .login-wrapper {
+                padding: 2rem 0;
+            }
+            .login-card {
+                max-width: 400px;
+                margin: 0 auto;
+            }
+            .login-title {
+                color: #60a5fa;
+                font-size: 1.5rem;
+                font-weight: 600;
+                margin-bottom: 0.25rem;
+                text-align: left;
+            }
+            .login-subtitle {
+                color: #94a3b8;
+                font-size: 0.9rem;
+                text-align: left;
+                margin-bottom: 1.5rem;
+            }
+            .stTextInput {
+                max-width: 300px;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+        
         st.markdown('<div class="login-wrapper">', unsafe_allow_html=True)
         st.markdown('<div class="login-card">', unsafe_allow_html=True)
         
