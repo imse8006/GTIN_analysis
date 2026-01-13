@@ -215,7 +215,7 @@ def check_password():
     def password_entered():
         """Checks whether a password entered by the user is correct."""
         # Get password from secrets (Streamlit Cloud) or use default for local
-        correct_password = st.secrets.get("PASSWORD", "default_password_123")
+        correct_password = st.secrets.get("PASSWORD", "OSDTeam123")
         
         if st.session_state["password"] == correct_password:
             st.session_state["password_correct"] = True

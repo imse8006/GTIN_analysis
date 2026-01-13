@@ -15,11 +15,6 @@ Le dashboard est maintenant protégé par un mot de passe. Voici comment le conf
    ```toml
    PASSWORD = "votre_mot_de_passe_ici"
    ```
-
-3. **Par défaut** (si pas de secrets.toml) :
-   - Le mot de passe par défaut est : `default_password_123`
-   - ⚠️ **Changez-le en production !**
-
 ## ☁️ Configuration Streamlit Cloud
 
 ### Méthode 1 : Via l'Interface Web
