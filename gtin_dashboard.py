@@ -228,26 +228,30 @@ def check_password():
         <style>
         .login-wrapper {
             padding: 2rem 0;
+            display: flex;
+            justify-content: center;
         }
         .login-card {
             max-width: 400px;
-            margin: 0 auto;
+            width: 100%;
+            text-align: center;
         }
         .login-title {
             color: #60a5fa;
-            font-size: 1.5rem;
-            font-weight: 600;
-            margin-bottom: 0.25rem;
-            text-align: left;
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            text-align: center;
         }
         .login-subtitle {
             color: #94a3b8;
             font-size: 0.9rem;
-            text-align: left;
+            text-align: center;
             margin-bottom: 1.5rem;
         }
         .stTextInput {
             max-width: 300px;
+            margin: 0 auto;
         }
         </style>
     """, unsafe_allow_html=True)
@@ -285,26 +289,30 @@ def check_password():
             <style>
             .login-wrapper {
                 padding: 2rem 0;
+                display: flex;
+                justify-content: center;
             }
             .login-card {
                 max-width: 400px;
-                margin: 0 auto;
+                width: 100%;
+                text-align: center;
             }
             .login-title {
                 color: #60a5fa;
-                font-size: 1.5rem;
-                font-weight: 600;
-                margin-bottom: 0.25rem;
-                text-align: left;
+                font-size: 2.5rem;
+                font-weight: 700;
+                margin-bottom: 0.5rem;
+                text-align: center;
             }
             .login-subtitle {
                 color: #94a3b8;
                 font-size: 0.9rem;
-                text-align: left;
+                text-align: center;
                 margin-bottom: 1.5rem;
             }
             .stTextInput {
                 max-width: 300px;
+                margin: 0 auto;
             }
             </style>
         """, unsafe_allow_html=True)
