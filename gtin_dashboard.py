@@ -209,7 +209,90 @@ def load_and_classify_data():
     return df, gtin_col
 
 
+def check_password():
+    """Returns `True` if the user had the correct password."""
+    
+    def password_entered():
+        """Checks whether a password entered by the user is correct."""
+        # Get password from secrets (Streamlit Cloud) or use default for local
+        correct_password = st.secrets.get("PASSWORD", "default_password_123")
+        
+        if st.session_state["password"] == correct_password:
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  # Don't store password
+        else:
+            st.session_state["password_correct"] = False
+    
+    # First run, show input for password
+    if "password_correct" not in st.session_state:
+        st.markdown("""
+            <style>
+            .password-container {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                min-height: 60vh;
+                flex-direction: column;
+            }
+            .password-box {
+                background-color: #1e293b;
+                padding: 3rem;
+                border-radius: 1rem;
+                border: 2px solid #334155;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+                max-width: 400px;
+                width: 100%;
+            }
+            .password-title {
+                color: #60a5fa;
+                font-size: 1.5rem;
+                font-weight: 700;
+                text-align: center;
+                margin-bottom: 1.5rem;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+        
+        st.markdown('<div class="password-container">', unsafe_allow_html=True)
+        st.markdown('<div class="password-box">', unsafe_allow_html=True)
+        st.markdown('<div class="password-title">🔒 Protected Dashboard</div>', unsafe_allow_html=True)
+        st.markdown('<p style="color: #cbd5e1; text-align: center; margin-bottom: 2rem;">Please enter the password to access the GTIN Quality Dashboard</p>', unsafe_allow_html=True)
+        
+        st.text_input(
+            "Password", 
+            type="password", 
+            on_change=password_entered, 
+            key="password",
+            label_visibility="visible"
+        )
+        
+        if "password" in st.session_state and st.session_state.get("password_correct", None) == False:
+            st.error("❌ Incorrect password. Please try again.")
+        
+        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+        return False
+    
+    # Password correct
+    elif st.session_state["password_correct"]:
+        return True
+    
+    # Password incorrect
+    else:
+        st.text_input(
+            "Password", 
+            type="password", 
+            on_change=password_entered, 
+            key="password"
+        )
+        return False
+
+
 def main():
+    # Password protection
+    if not check_password():
+        st.stop()
+    
     # Header
     st.markdown('<h1 class="main-header">📊 GTIN Quality Dashboard - MDM Analysis</h1>', unsafe_allow_html=True)
     

@@ -11,6 +11,10 @@ ENV/
 
 # Streamlit
 .streamlit/
+# But keep config.toml if needed
+!.streamlit/config.toml
+# Never commit secrets
+.streamlit/secrets.toml
 
 # IDE
 .vscode/
