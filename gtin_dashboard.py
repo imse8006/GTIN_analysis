@@ -3,6 +3,7 @@ import streamlit as st
 import plotly.express as px
 from pathlib import Path
 from datetime import date
+import io
 
 # Configuration de la page
 st.set_page_config(
@@ -660,6 +661,143 @@ def main():
             status_detail_display["Count"] = status_detail_display["Count"].apply(lambda x: f"{int(x):,}")
             status_detail_display["Percentage"] = status_detail_display["Percentage"].apply(lambda x: f"{x:.2f}%")
             st.dataframe(status_detail_display, use_container_width=True, hide_index=True)
+    
+    # ---------- EMAIL GENERATION FOR LEGAL ENTITIES ----------
+    st.markdown('<div class="section-header">📧 Generate Email for Legal Entity</div>', unsafe_allow_html=True)
+    
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        selected_entity_email = st.selectbox(
+            "**Select Legal Entity**",
+            legal_entities,
+            key="entity_email",
+            help="Select a Legal Entity to generate email and attachment"
+        )
+    
+    with col2:
+        st.markdown("<br>", unsafe_allow_html=True)
+        generate_email = st.button("📧 Generate Email & Report", use_container_width=True)
+    
+    if generate_email and selected_entity_email:
+        # Filter data for selected entity
+        entity_data = df[df["Legal Entity"] == selected_entity_email].copy()
+        
+        # Get Generic and Blocked GTINs
+        generic_blocked = entity_data[entity_data["gtin_status"].isin(["GENERIC", "BLOCKED"])].copy()
+        
+        if not generic_blocked.empty:
+            # Prepare Excel file
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                # Sheet 1: Generic GTINs
+                generic_gtins = generic_blocked[generic_blocked["gtin_status"] == "GENERIC"].copy()
+                if not generic_gtins.empty:
+                    generic_gtins[["Legal Entity", "gtin_outer_raw", "gtin_outer_normalized", "gtin_status"]].to_excel(
+                        writer, sheet_name="Generic GTINs", index=False
+                    )
+                
+                # Sheet 2: Blocked GTINs
+                blocked_gtins = generic_blocked[generic_blocked["gtin_status"] == "BLOCKED"].copy()
+                if not blocked_gtins.empty:
+                    blocked_gtins[["Legal Entity", "gtin_outer_raw", "gtin_outer_normalized", "gtin_status"]].to_excel(
+                        writer, sheet_name="Blocked GTINs", index=False
+                    )
+                
+                # Sheet 3: Summary
+                summary_data = {
+                    "Legal Entity": [selected_entity_email],
+                    "Total Generic GTINs": [len(generic_gtins)],
+                    "Total Blocked GTINs": [len(blocked_gtins)],
+                    "Total to Review": [len(generic_blocked)],
+                    "Report Date": [date.today().strftime("%Y-%m-%d")]
+                }
+                pd.DataFrame(summary_data).to_excel(writer, sheet_name="Summary", index=False)
+            
+            output.seek(0)
+            
+            # Generate email template
+            generic_count = len(generic_gtins)
+            blocked_count = len(blocked_gtins)
+            total_count = len(generic_blocked)
+            
+            email_subject = f"Action Required: Generic and Blocked GTINs Review - {selected_entity_email}"
+            
+            email_body = f"""Dear {selected_entity_email} Team,
+
+This email is to inform you that your Legal Entity has GTINs that require your attention and action.
+
+**Summary:**
+- Generic GTINs: {generic_count:,}
+- Blocked GTINs: {blocked_count:,}
+- Total GTINs to review: {total_count:,}
+
+**Action Required:**
+Please review the attached Excel file which contains the detailed list of Generic and Blocked GTINs for your Legal Entity. These GTINs need to be updated or replaced with valid product GTINs.
+
+**Next Steps:**
+1. Review the attached file
+2. Identify the products associated with these GTINs
+3. Update the GTINs with valid product codes
+4. Confirm completion once updates are made
+
+If you have any questions or need assistance, please don't hesitate to contact the MDM team.
+
+Best regards,
+MDM Team
+
+---
+Report generated on: {date.today().strftime("%B %d, %Y")}
+"""
+            
+            # Display email template
+            st.markdown("### 📝 Email Template")
+            
+            col_subject, col_copy = st.columns([4, 1])
+            with col_subject:
+                st.text_input("Subject", value=email_subject, key="email_subject", disabled=True)
+            with col_copy:
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("📋 Copy Subject", use_container_width=True):
+                    st.write("Subject copied to clipboard (use Ctrl+C)")
+            
+            st.text_area("Email Body", value=email_body, height=300, key="email_body")
+            
+            col_copy_body, col_download = st.columns([1, 1])
+            with col_copy_body:
+                if st.button("📋 Copy Email Body", use_container_width=True):
+                    st.success("Email body copied! (Use Ctrl+C in the text area)")
+            
+            with col_download:
+                st.download_button(
+                    label="📎 Download Excel Report",
+                    data=output,
+                    file_name=f"GTIN_Review_{selected_entity_email.replace(' ', '_')}_{date.today().isoformat()}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+            
+            # Display preview
+            st.markdown("### 📊 Report Preview")
+            st.info(f"**{selected_entity_email}**: {generic_count:,} Generic GTINs, {blocked_count:,} Blocked GTINs")
+            
+            if not generic_gtins.empty:
+                st.markdown("#### Generic GTINs Sample (first 10)")
+                st.dataframe(
+                    generic_gtins[["gtin_outer_raw", "gtin_outer_normalized"]].head(10),
+                    use_container_width=True,
+                    hide_index=True
+                )
+            
+            if not blocked_gtins.empty:
+                st.markdown("#### Blocked GTINs Sample (first 10)")
+                st.dataframe(
+                    blocked_gtins[["gtin_outer_raw", "gtin_outer_normalized"]].head(10),
+                    use_container_width=True,
+                    hide_index=True
+                )
+        else:
+            st.success(f"✅ **{selected_entity_email}** has no Generic or Blocked GTINs. No action required!")
     
     # Footer
     st.markdown("---")
