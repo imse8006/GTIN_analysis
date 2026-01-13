@@ -365,21 +365,37 @@ def main():
     # Legal Entity filter
     legal_entities = sorted(df["Legal Entity"].unique())
     
-    col1, col2 = st.columns([3, 1])
+    # Initialize session state for selected entities
+    if "selected_entities" not in st.session_state:
+        st.session_state.selected_entities = legal_entities
+    
+    col1, col2, col3 = st.columns([3, 1, 1])
     with col1:
         selected_entities = st.multiselect(
             "**Select Legal Entities**",
             legal_entities,
-            default=legal_entities,
+            default=st.session_state.selected_entities,
             help="Select one or more Legal Entities to analyze"
         )
+        # Update session state
+        st.session_state.selected_entities = selected_entities
+    
     with col2:
         st.markdown("<br>", unsafe_allow_html=True)  # Spacing
         if st.button("🔄 Reset to All", use_container_width=True):
-            selected_entities = legal_entities
+            st.session_state.selected_entities = legal_entities
+            st.rerun()
+    
+    with col3:
+        st.markdown("<br>", unsafe_allow_html=True)  # Spacing
+        if st.button("Reset", use_container_width=True):
+            st.session_state.selected_entities = []
             st.rerun()
     
     st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Use session state for filtering
+    selected_entities = st.session_state.selected_entities
     
     if not selected_entities:
         st.warning("⚠️ Please select at least one Legal Entity")
