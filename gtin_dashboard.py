@@ -227,47 +227,139 @@ def check_password():
     if "password_correct" not in st.session_state:
         st.markdown("""
             <style>
-            .password-container {
+            .login-container {
                 display: flex;
                 justify-content: center;
                 align-items: center;
-                min-height: 60vh;
+                min-height: 85vh;
                 flex-direction: column;
+                background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
             }
-            .password-box {
-                background-color: #1e293b;
-                padding: 3rem;
-                border-radius: 1rem;
-                border: 2px solid #334155;
-                box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-                max-width: 400px;
-                width: 100%;
+            .login-box {
+                background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+                padding: 3.5rem 3rem;
+                border-radius: 1.5rem;
+                border: 1px solid #475569;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.5), 
+                            0 0 0 1px rgba(96, 165, 250, 0.1);
+                max-width: 450px;
+                width: 90%;
+                position: relative;
+                overflow: hidden;
             }
-            .password-title {
-                color: #60a5fa;
-                font-size: 1.5rem;
-                font-weight: 700;
+            .login-box::before {
+                content: '';
+                position: absolute;
+                top: 0;
+                left: 0;
+                right: 0;
+                height: 4px;
+                background: linear-gradient(90deg, #60a5fa, #3b82f6, #2563eb);
+            }
+            .login-header {
                 text-align: center;
-                margin-bottom: 1.5rem;
+                margin-bottom: 2rem;
+            }
+            .login-icon {
+                font-size: 4rem;
+                margin-bottom: 1rem;
+                display: block;
+                animation: pulse 2s ease-in-out infinite;
+            }
+            @keyframes pulse {
+                0%, 100% { transform: scale(1); opacity: 1; }
+                50% { transform: scale(1.05); opacity: 0.9; }
+            }
+            .login-title {
+                color: #60a5fa;
+                font-size: 2rem;
+                font-weight: 700;
+                margin-bottom: 0.5rem;
+                text-shadow: 0 2px 10px rgba(96, 165, 250, 0.3);
+            }
+            .login-subtitle {
+                color: #94a3b8;
+                font-size: 0.95rem;
+                margin-bottom: 0;
+                line-height: 1.5;
+            }
+            .password-label {
+                color: #cbd5e1;
+                font-weight: 600;
+                font-size: 0.9rem;
+                margin-bottom: 0.5rem;
+                display: block;
+            }
+            .stTextInput > div > div > input {
+                background-color: #0f172a;
+                color: #f1f5f9;
+                border: 2px solid #475569;
+                border-radius: 0.5rem;
+                padding: 0.75rem 1rem;
+                font-size: 1rem;
+            }
+            .stTextInput > div > div > input:focus {
+                border-color: #60a5fa;
+                box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.2);
+            }
+            .error-message {
+                background-color: rgba(239, 68, 68, 0.1);
+                border: 1px solid rgba(239, 68, 68, 0.3);
+                color: #fca5a5;
+                padding: 1rem;
+                border-radius: 0.5rem;
+                margin-top: 1rem;
+                text-align: center;
+                font-weight: 500;
+            }
+            .footer-text {
+                text-align: center;
+                color: #64748b;
+                font-size: 0.85rem;
+                margin-top: 2rem;
+                padding-top: 1.5rem;
+                border-top: 1px solid #334155;
             }
             </style>
         """, unsafe_allow_html=True)
         
-        st.markdown('<div class="password-container">', unsafe_allow_html=True)
-        st.markdown('<div class="password-box">', unsafe_allow_html=True)
-        st.markdown('<div class="password-title">🔒 Protected Dashboard</div>', unsafe_allow_html=True)
-        st.markdown('<p style="color: #cbd5e1; text-align: center; margin-bottom: 2rem;">Please enter the password to access the GTIN Quality Dashboard</p>', unsafe_allow_html=True)
+        st.markdown('<div class="login-container">', unsafe_allow_html=True)
+        st.markdown('<div class="login-box">', unsafe_allow_html=True)
         
+        # Header with icon and title
+        st.markdown("""
+            <div class="login-header">
+                <span class="login-icon">🔒</span>
+                <div class="login-title">GTIN Quality Dashboard</div>
+                <div class="login-subtitle">MDM Analysis Portal</div>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        # Password input
+        st.markdown('<label class="password-label">Enter Password</label>', unsafe_allow_html=True)
         st.text_input(
-            "Password", 
+            " ", 
             type="password", 
             on_change=password_entered, 
             key="password",
-            label_visibility="visible"
+            label_visibility="collapsed",
+            placeholder="Enter your password"
         )
         
+        # Error message
         if "password" in st.session_state and st.session_state.get("password_correct", None) == False:
-            st.error("❌ Incorrect password. Please try again.")
+            st.markdown("""
+                <div class="error-message">
+                    ❌ Incorrect password. Please try again.
+                </div>
+            """, unsafe_allow_html=True)
+        
+        # Footer
+        st.markdown("""
+            <div class="footer-text">
+                Protected access • OSD Team
+            </div>
+        """, unsafe_allow_html=True)
         
         st.markdown('</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
@@ -277,14 +369,64 @@ def check_password():
     elif st.session_state["password_correct"]:
         return True
     
-    # Password incorrect
+    # Password incorrect - show again
     else:
+        st.markdown("""
+            <style>
+            .login-container {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                min-height: 85vh;
+                flex-direction: column;
+            }
+            .login-box {
+                background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+                padding: 3.5rem 3rem;
+                border-radius: 1.5rem;
+                border: 1px solid #475569;
+                box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+                max-width: 450px;
+                width: 90%;
+            }
+            .password-label {
+                color: #cbd5e1;
+                font-weight: 600;
+                font-size: 0.9rem;
+                margin-bottom: 0.5rem;
+                display: block;
+            }
+            .error-message {
+                background-color: rgba(239, 68, 68, 0.1);
+                border: 1px solid rgba(239, 68, 68, 0.3);
+                color: #fca5a5;
+                padding: 1rem;
+                border-radius: 0.5rem;
+                margin-top: 1rem;
+                text-align: center;
+                font-weight: 500;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+        
+        st.markdown('<div class="login-container">', unsafe_allow_html=True)
+        st.markdown('<div class="login-box">', unsafe_allow_html=True)
+        st.markdown('<label class="password-label">Enter Password</label>', unsafe_allow_html=True)
         st.text_input(
-            "Password", 
+            " ", 
             type="password", 
             on_change=password_entered, 
-            key="password"
+            key="password",
+            label_visibility="collapsed",
+            placeholder="Enter your password"
         )
+        st.markdown("""
+            <div class="error-message">
+                ❌ Incorrect password. Please try again.
+            </div>
+        """, unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown('</div>', unsafe_allow_html=True)
         return False
 
 
