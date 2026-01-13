@@ -775,15 +775,45 @@ Rapport généré le : {date.today().strftime("%d/%m/%Y")}
             
             st.text_area("Email Body", value=email_body, height=300, key="email_body")
             
-            col_copy_body, col_download, col_mailto = st.columns([1, 1, 1])
+            # Create .eml file (Outlook draft with attachment)
+            excel_filename = f"GTIN_Review_{selected_entity_email.replace(' ', '_').replace('/', '_')}_{date.today().isoformat()}.xlsx"
+            
+            # Create email message
+            msg = MIMEMultipart()
+            msg['Subject'] = email_subject
+            msg['From'] = "MDM Team <mdm@sysco.com>"  # Can be customized
+            msg['To'] = ""  # Will be filled by user
+            
+            # Add body
+            msg.attach(MIMEText(email_body, 'plain', 'utf-8'))
+            
+            # Add Excel attachment
+            output.seek(0)
+            attachment = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            attachment.set_payload(output.read())
+            encoders.encode_base64(attachment)
+            attachment.add_header(
+                'Content-Disposition',
+                f'attachment; filename= {excel_filename}'
+            )
+            msg.attach(attachment)
+            
+            # Convert to .eml format
+            eml_output = io.BytesIO()
+            eml_output.write(msg.as_bytes())
+            eml_output.seek(0)
+            
+            # Reset output for Excel download
+            output.seek(0)
+            
+            col_copy_body, col_download_excel, col_download_eml = st.columns([1, 1, 1])
             with col_copy_body:
                 if st.button("📋 Copy Email Body", use_container_width=True, key="copy_body"):
                     st.success("✓ Copied!")
             
-            with col_download:
-                excel_filename = f"GTIN_Review_{selected_entity_email.replace(' ', '_').replace('/', '_')}_{date.today().isoformat()}.xlsx"
+            with col_download_excel:
                 st.download_button(
-                    label="📎 Download Excel Report",
+                    label="📎 Download Excel Only",
                     data=output,
                     file_name=excel_filename,
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -791,12 +821,16 @@ Rapport généré le : {date.today().strftime("%d/%m/%Y")}
                     key="download_excel"
                 )
             
-            with col_mailto:
-                # Create mailto link (note: attachments not supported in mailto, but we provide the file)
-                mailto_subject = email_subject.replace(" ", "%20").replace(":", "%3A")
-                mailto_body = email_body.replace("\n", "%0D%0A").replace(" ", "%20")
-                mailto_link = f"mailto:?subject={mailto_subject}&body={mailto_body[:2000]}"  # Limit body length
-                st.markdown(f'<a href="{mailto_link}" target="_blank"><button style="width: 100%; padding: 0.5rem; background-color: #60a5fa; color: white; border: none; border-radius: 0.25rem; cursor: pointer;">📧 Open Email Draft</button></a>', unsafe_allow_html=True)
+            with col_download_eml:
+                st.download_button(
+                    label="📧 Download Outlook Draft",
+                    data=eml_output,
+                    file_name=f"Email_Draft_{selected_entity_email.replace(' ', '_').replace('/', '_')}_{date.today().isoformat()}.eml",
+                    mime="message/rfc822",
+                    use_container_width=True,
+                    key="download_eml",
+                    help="Double-click this file to open in Outlook with the Excel attachment"
+                )
             
             # Display preview
             st.markdown("### 📊 Report Preview")
