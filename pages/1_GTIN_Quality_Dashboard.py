@@ -43,7 +43,7 @@ st.set_page_config(
     page_title="GTIN Quality Dashboard - MDM Analysis",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded"  # Expanded to show navigation
 )
 
 # Custom CSS for professional dark theme look
@@ -303,7 +303,10 @@ def check_password():
     def password_entered():
         """Checks whether a password entered by the user is correct."""
         # Get password from secrets (Streamlit Cloud) or use default for local
-        correct_password = st.secrets.get("PASSWORD", "OSDTeam123")
+        try:
+            correct_password = st.secrets["PASSWORD"]
+        except (KeyError, FileNotFoundError):
+            correct_password = "OSDTeam123"
         
         if st.session_state["password"] == correct_password:
             st.session_state["password_correct"] = True
