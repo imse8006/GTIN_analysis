@@ -177,7 +177,12 @@ def analyze_duplicates(df, gtin_outer_col, gtin_inner_col):
 def check_password():
     """Returns `True` if the user had the correct password."""
     def password_entered():
-        correct_password = st.secrets.get("PASSWORD", "OSDTeam123")
+        # Get password from secrets (Streamlit Cloud) or use default for local
+        try:
+            correct_password = st.secrets["PASSWORD"]
+        except (KeyError, FileNotFoundError):
+            correct_password = "OSDTeam123"
+        
         if st.session_state["password"] == correct_password:
             st.session_state["password_correct"] = True
             del st.session_state["password"]
