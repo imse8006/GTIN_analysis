@@ -10,7 +10,7 @@ from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
 
-# Configuration de la page
+# Page configuration
 st.set_page_config(
     page_title="GTIN Quality Dashboard - MDM Analysis",
     page_icon="📊",
@@ -18,7 +18,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# CSS personnalisé pour un look professionnel avec thème sombre
+# Custom CSS for professional dark theme look
 st.markdown("""
     <style>
     .main-header {
@@ -96,7 +96,7 @@ import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent))
 
-# Import des fonctions nécessaires
+# Import necessary functions
 INPUT_FILE = "all-products-prod-2026-01-13_15.30.30.xlsx"
 
 # MDM Business Rules
@@ -714,52 +714,48 @@ def main():
                 
                 # Sheet 1: Generic GTINs (if any)
                 if not generic_gtins.empty:
-                    # Include all relevant columns from original dataframe
-                    generic_cols = ["Legal Entity", "gtin_outer_raw", "gtin_outer_normalized", "gtin_status"]
-                    # Add other columns if they exist
-                    available_cols = [col for col in generic_cols if col in generic_gtins.columns]
-                    generic_gtins[available_cols].to_excel(
+                    # Include all columns from original dataframe (raw data)
+                    generic_gtins.to_excel(
                         writer, sheet_name="Generic GTINs", index=False
                     )
                 
                 # Sheet 2: Blocked GTINs (if any)
                 if not blocked_gtins.empty:
-                    blocked_cols = ["Legal Entity", "gtin_outer_raw", "gtin_outer_normalized", "gtin_status"]
-                    available_cols = [col for col in blocked_cols if col in blocked_gtins.columns]
-                    blocked_gtins[available_cols].to_excel(
+                    # Include all columns from original dataframe (raw data)
+                    blocked_gtins.to_excel(
                         writer, sheet_name="Blocked GTINs", index=False
                     )
             
             output.seek(0)
             
-            # Generate email template in French
-            email_subject = f"Action Requise : Révision des GTIN Génériques et Bloqués - {selected_entity_email}"
+            # Generate email template in English
+            email_subject = f"Action Required: Review of Generic and Blocked GTINs - {selected_entity_email}"
             
-            email_body = f"""Bonjour,
+            email_body = f"""Hello,
 
-Votre entité légale ({selected_entity_email}) possède des GTIN qui nécessitent votre attention et une action de votre part.
+Your legal entity ({selected_entity_email}) has GTINs that require your attention and action.
 
-**Résumé :**
-- GTIN Génériques : {generic_count:,}
-- GTIN Bloqués : {blocked_count:,}
-- Total de GTIN à réviser : {total_count:,}
+**Summary:**
+- Generic GTINs: {generic_count:,}
+- Blocked GTINs: {blocked_count:,}
+- Total GTINs to review: {total_count:,}
 
-**Action Requise :**
-Veuillez examiner le fichier Excel en pièce jointe qui contient la liste détaillée des GTIN Génériques et Bloqués pour votre entité légale. Ces GTIN doivent être mis à jour ou remplacés par des codes GTIN valides pour les produits.
+**Action Required:**
+Please review the attached Excel file which contains the detailed list of Generic and Blocked GTINs for your legal entity. These GTINs must be updated or replaced with valid product GTIN codes.
 
-**Prochaines Étapes :**
-1. Examiner le fichier en pièce jointe
-2. Identifier les produits associés à ces GTIN
-3. Mettre à jour les GTIN avec des codes produits valides
-4. Confirmer la complétion une fois les mises à jour effectuées
+**Next Steps:**
+1. Review the attached file
+2. Identify the products associated with these GTINs
+3. Update the GTINs with valid product codes
+4. Confirm completion once updates are completed
 
-Si vous avez des questions ou besoin d'assistance, n'hésitez pas à contacter l'équipe MDM.
+If you have any questions or need assistance, please do not hesitate to contact the MDM team.
 
-Cordialement,
-Équipe MDM
+Best regards,
+MDM Team
 
 ---
-Rapport généré le : {date.today().strftime("%d/%m/%Y")}
+Report generated on: {date.today().strftime("%B %d, %Y")}
 """
             
             # Display email template
@@ -838,8 +834,11 @@ Rapport généré le : {date.today().strftime("%d/%m/%Y")}
             
             if not generic_gtins.empty:
                 st.markdown("#### Generic GTINs Sample (first 10)")
-                preview_cols = ["gtin_outer_raw", "gtin_outer_normalized"]
-                available_preview_cols = [col for col in preview_cols if col in generic_gtins.columns]
+                preview_cols = ["SUPC", "Local Product Description", "Brand", "OSD Classification"]
+                # Add gtin_status and gtin_outer_normalized for context
+                additional_cols = ["gtin_outer_normalized", "gtin_status"]
+                # Check which columns exist in the dataframe
+                available_preview_cols = [col for col in preview_cols + additional_cols if col in generic_gtins.columns]
                 if available_preview_cols:
                     st.dataframe(
                         generic_gtins[available_preview_cols].head(10),
@@ -849,8 +848,11 @@ Rapport généré le : {date.today().strftime("%d/%m/%Y")}
             
             if not blocked_gtins.empty:
                 st.markdown("#### Blocked GTINs Sample (first 10)")
-                preview_cols = ["gtin_outer_raw", "gtin_outer_normalized"]
-                available_preview_cols = [col for col in preview_cols if col in blocked_gtins.columns]
+                preview_cols = ["SUPC", "Local Product Description", "Brand", "OSD Classification"]
+                # Add gtin_status and gtin_outer_normalized for context
+                additional_cols = ["gtin_outer_normalized", "gtin_status"]
+                # Check which columns exist in the dataframe
+                available_preview_cols = [col for col in preview_cols + additional_cols if col in blocked_gtins.columns]
                 if available_preview_cols:
                     st.dataframe(
                         blocked_gtins[available_preview_cols].head(10),
