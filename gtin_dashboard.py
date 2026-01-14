@@ -39,11 +39,13 @@ else:
     OUTLOOK_ERROR_MSG = f"Outlook integration is only available on Windows. Current system: {platform.system()}, Python path: {python_path}"
 
 # Page configuration
+# Note: This file is kept for backward compatibility
+# For multi-page navigation, use Home.py as entry point or pages/1_GTIN_Quality_Dashboard.py directly
 st.set_page_config(
     page_title="GTIN Quality Dashboard - MDM Analysis",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"  # Expanded to show navigation if pages are detected
 )
 
 # Custom CSS for professional dark theme look
