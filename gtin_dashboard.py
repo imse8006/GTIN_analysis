@@ -5,10 +5,15 @@ from pathlib import Path
 from datetime import date
 import io
 import base64
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.base import MIMEBase
-from email import encoders
+import tempfile
+import os
+
+# Try to import win32com for Outlook integration (Windows only)
+try:
+    import win32com.client
+    OUTLOOK_AVAILABLE = True
+except ImportError:
+    OUTLOOK_AVAILABLE = False
 
 # Page configuration
 st.set_page_config(
@@ -106,6 +111,24 @@ GENERIC_GTINS = {
 }
 EXPLICIT_BLOCKED = "99999999999999"
 VALID_LENGTHS = {8, 13, 14}
+
+# Legal Entity to Email Recipients Mapping
+LEGAL_ENTITY_EMAILS = {
+    "Brakes": ["samantha.smith@sysco.com"],
+    "Sysco ROI": ["glen-timperley@sysco.com", "sarah-graham@sysco.com"],
+    "Sysco NI": ["glen-timperley@sysco.com", "sarah-graham@sysco.com"],
+    "Classic Drinks": ["glen-timperley@sysco.com", "sarah-graham@sysco.com"],
+    "Ready Chef": ["glen-timperley@sysco.com", "sarah-graham@sysco.com"],
+    "Menigo": ["paula.sterner@menigo.se"],
+    "Fruktservice": ["paula.sterner@menigo.se"],
+    "Servicestyckarna": ["paula.sterner@menigo.se"],
+    "Ekofisk": ["paula.sterner@menigo.se"],
+    "Fresh Direct": ["ben.newby@sysco.com"],
+    "KFF": ["joseph.maczka@sysco.com"],
+    "Medina": ["joseph.maczka@sysco.com"],
+    "France": ["severine.branciard@sysco.com"],
+    "LAG": ["severine.branciard@sysco.com"],
+}
 
 
 def normalize_gtin(value):
@@ -751,12 +774,15 @@ Please review the attached Excel file which contains the detailed list of Generi
 
 If you have any questions or need assistance, please do not hesitate to contact the MDM team.
 
-Best regards,
-MDM Team
+Best regards
 
 ---
 Report generated on: {date.today().strftime("%B %d, %Y")}
 """
+            
+            # Get recipients for this legal entity
+            recipients = LEGAL_ENTITY_EMAILS.get(selected_entity_email, [])
+            recipients_str = "; ".join(recipients) if recipients else ""
             
             # Display email template
             st.markdown("### 📝 Email Template")
@@ -771,41 +797,53 @@ Report generated on: {date.today().strftime("%B %d, %Y")}
             
             st.text_area("Email Body", value=email_body, height=300, key="email_body")
             
-            # Create .eml file (Outlook draft with attachment)
+            # Create Excel filename
             excel_filename = f"GTIN_Review_{selected_entity_email.replace(' ', '_').replace('/', '_')}_{date.today().isoformat()}.xlsx"
             
-            # Create email message
-            msg = MIMEMultipart()
-            msg['Subject'] = email_subject
-            msg['From'] = "MDM Team <mdm@sysco.com>"  # Can be customized
-            msg['To'] = ""  # Will be filled by user
+            # Save Excel to temporary file for Outlook attachment
+            temp_dir = tempfile.gettempdir()
+            temp_excel_path = os.path.join(temp_dir, excel_filename)
             
-            # Add body
-            msg.attach(MIMEText(email_body, 'plain', 'utf-8'))
-            
-            # Add Excel attachment
+            # Write Excel to temporary file
             output.seek(0)
-            attachment = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-            attachment.set_payload(output.read())
-            encoders.encode_base64(attachment)
-            attachment.add_header(
-                'Content-Disposition',
-                f'attachment; filename= {excel_filename}'
-            )
-            msg.attach(attachment)
-            
-            # Convert to .eml format
-            eml_output = io.BytesIO()
-            eml_output.write(msg.as_bytes())
-            eml_output.seek(0)
+            with open(temp_excel_path, 'wb') as f:
+                f.write(output.read())
             
             # Reset output for Excel download
             output.seek(0)
             
-            col_copy_body, col_download_excel, col_download_eml = st.columns([1, 1, 1])
-            with col_copy_body:
-                if st.button("📋 Copy Email Body", use_container_width=True, key="copy_body"):
-                    st.success("✓ Copied!")
+            # Buttons for actions
+            col_open_outlook, col_download_excel = st.columns([1, 1])
+            
+            with col_open_outlook:
+                if OUTLOOK_AVAILABLE:
+                    if st.button("📧 Open in Outlook", use_container_width=True, key="open_outlook"):
+                        try:
+                            # Create Outlook application
+                            outlook = win32com.client.Dispatch("Outlook.Application")
+                            mail = outlook.CreateItem(0)  # 0 = olMailItem
+                            
+                            # Set email properties
+                            mail.Subject = email_subject
+                            mail.Body = email_body
+                            
+                            # Set recipients
+                            if recipients:
+                                for recipient in recipients:
+                                    mail.Recipients.Add(recipient)
+                            
+                            # Attach Excel file
+                            mail.Attachments.Add(temp_excel_path)
+                            
+                            # Display email (user can add signature manually)
+                            mail.Display(True)
+                            
+                            st.success(f"✅ Outlook email opened! Recipients: {recipients_str if recipients_str else 'None configured'}")
+                        except Exception as e:
+                            st.error(f"❌ Error opening Outlook: {str(e)}")
+                            st.info("You can still download the Excel file below.")
+                else:
+                    st.info("⚠️ Outlook integration not available (requires Windows with Outlook installed)")
             
             with col_download_excel:
                 st.download_button(
@@ -817,16 +855,11 @@ Report generated on: {date.today().strftime("%B %d, %Y")}
                     key="download_excel"
                 )
             
-            with col_download_eml:
-                st.download_button(
-                    label="📧 Download Outlook Draft",
-                    data=eml_output,
-                    file_name=f"Email_Draft_{selected_entity_email.replace(' ', '_').replace('/', '_')}_{date.today().isoformat()}.eml",
-                    mime="message/rfc822",
-                    use_container_width=True,
-                    key="download_eml",
-                    help="Double-click this file to open in Outlook with the Excel attachment"
-                )
+            # Show recipients info
+            if recipients:
+                st.info(f"📧 **Recipients configured for {selected_entity_email}:** {recipients_str}")
+            else:
+                st.warning(f"⚠️ No email recipients configured for **{selected_entity_email}**. Please add them manually in Outlook.")
             
             # Display preview
             st.markdown("### 📊 Report Preview")
