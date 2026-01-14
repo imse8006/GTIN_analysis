@@ -11,12 +11,14 @@ import os
 # Try to import win32com for Outlook integration (Windows only)
 OUTLOOK_AVAILABLE = False
 OUTLOOK_ERROR_MSG = None
+import sys
 try:
     import win32com.client
     OUTLOOK_AVAILABLE = True
 except ImportError as e:
     OUTLOOK_AVAILABLE = False
-    OUTLOOK_ERROR_MSG = f"pywin32 is not installed. Run: pip install pywin32 (Error: {str(e)})"
+    python_path = sys.executable
+    OUTLOOK_ERROR_MSG = f"pywin32 is not installed in the Python environment used by Streamlit. Python path: {python_path}"
 except Exception as e:
     OUTLOOK_AVAILABLE = False
     OUTLOOK_ERROR_MSG = f"Error importing win32com: {str(e)}"
@@ -821,20 +823,22 @@ Report generated on: {date.today().strftime("%B %d, %Y")}
                     error_msg = OUTLOOK_ERROR_MSG or "Outlook integration not available"
                     st.warning(f"⚠️ {error_msg}")
                     with st.expander("ℹ️ How to enable Outlook integration"):
-                        st.markdown("""
+                        python_path = sys.executable
+                        st.markdown(f"""
                         **To enable Outlook integration:**
                         1. Make sure you're running on Windows
-                        2. If using a virtual environment, activate it and install: `pip install pywin32`
-                        3. Make sure Outlook is installed and configured
-                        4. **Restart the Streamlit app completely** (stop and restart)
-                        5. Clear Streamlit cache if needed: `streamlit cache clear`
+                        2. **Current Python path:** `{python_path}`
+                        3. Install pywin32 in the correct environment:
+                           - If using venv: `venv\\Scripts\\python.exe -m pip install pywin32`
+                           - Or activate venv first: `venv\\Scripts\\activate.bat` then `pip install pywin32`
+                        4. Make sure Outlook is installed and configured
+                        5. **Restart the Streamlit app completely** (stop and restart)
+                        6. Clear Streamlit cache if needed: `streamlit cache clear`
                         
                         **If using run_dashboard.bat:**
-                        - The venv should already have pywin32 installed
-                        - Make sure to stop Streamlit completely and restart it
-                        
-                        If you continue to see this message after installing pywin32, 
-                        try running: `python -m pywin32_postinstall -install` in your venv
+                        - Make sure the venv is activated before running Streamlit
+                        - Verify pywin32 is installed: `venv\\Scripts\\python.exe -c "import win32com.client; print('OK')"`
+                        - Stop Streamlit completely (Ctrl+C) and restart it
                         """)
             
             with col_download_excel:
