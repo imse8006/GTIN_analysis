@@ -15,7 +15,7 @@ st.set_page_config(
     page_title="GTIN Duplicate Analysis - MDM",
     page_icon="🔍",
     layout="wide",
-    initial_sidebar_state="collapsed"
+    initial_sidebar_state="expanded"  # Expanded to show navigation
 )
 
 # Use same CSS as main dashboard

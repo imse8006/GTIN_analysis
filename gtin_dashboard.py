@@ -955,17 +955,5 @@ Report generated on: {date.today().strftime("%B %d, %Y")}
     )
 
 
-# For Streamlit Cloud: redirect to multi-page structure
-# This file is kept for backward compatibility
-# The actual dashboard is in pages/1_GTIN_Quality_Dashboard.py
-
 if __name__ == "__main__":
-    # Import and run the main dashboard from pages
-    import sys
-    from pathlib import Path
-    sys.path.insert(0, str(Path(__file__).parent / "pages"))
-    
-    # Import the main dashboard page
-    from importlib import import_module
-    dashboard_module = import_module("1_GTIN_Quality_Dashboard")
-    dashboard_module.main()
+    main()
