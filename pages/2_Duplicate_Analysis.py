@@ -255,6 +255,34 @@ def main():
         else:
             st.metric("🔀 Cross Duplicates", "N/A", "Inner column not found")
     
+    # Save Analysis button
+    st.markdown("---")
+    col_save, _ = st.columns([1, 5])
+    with col_save:
+        if st.button("💾 Save Analysis and Report to Tracker", use_container_width=True, type="primary"):
+            import sys
+            from pathlib import Path
+            sys.path.append(str(Path(__file__).parent.parent))
+            from tracker_utils import save_tracker_data
+            
+            # Prepare duplicate metrics
+            tracker_entry = {
+                "analysis_type": "duplicate",
+                "total_products": total_rows,
+                "outer_duplicates": duplicate_results["outer"]["total_duplicates"],
+                "outer_unique_duplicated": duplicate_results["outer"]["unique_duplicated_gtins"],
+                "inner_duplicates": duplicate_results["inner"]["total_duplicates"] if duplicate_results["inner"] else 0,
+                "inner_unique_duplicated": duplicate_results["inner"]["unique_duplicated_gtins"] if duplicate_results["inner"] else 0,
+                "cross_duplicates": duplicate_results["cross"]["unique_cross_gtins"] if duplicate_results["cross"] else 0,
+                "cross_total_records": duplicate_results["cross"]["total_records"] if duplicate_results["cross"] else 0,
+                "has_inner_column": gtin_inner_col is not None
+            }
+            
+            if save_tracker_data(tracker_entry):
+                st.success("✅ Analysis saved to tracker successfully!")
+            else:
+                st.error("❌ Error saving analysis to tracker")
+    
     # Detailed Analysis
     st.markdown('<div class="section-header">📋 Detailed Analysis</div>', unsafe_allow_html=True)
     
