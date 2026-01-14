@@ -390,7 +390,62 @@ def main():
     st.markdown('<h1 class="main-header">📊 GTIN Quality Dashboard - MDM Analysis</h1>', unsafe_allow_html=True)
     
     # Display source file info
-    st.markdown(f'<div style="text-align: center; color: #cbd5e1; margin-bottom: 1.5rem;">📁 Source file: <strong style="color: #60a5fa;">{INPUT_FILE}</strong></div>', unsafe_allow_html=True)
+    st.markdown(f'<div style="text-align: center; color: #cbd5e1; margin-bottom: 1rem;">📁 Source file: <strong style="color: #60a5fa;">{INPUT_FILE}</strong></div>', unsafe_allow_html=True)
+    
+    # Save Analysis button - positioned right after source file
+    col_save, _ = st.columns([1, 4])
+    with col_save:
+        if st.button("💾 Save Analysis and Report to Tracker", use_container_width=True, type="primary", key="save_quality_analysis"):
+            import sys
+            from pathlib import Path
+            sys.path.append(str(Path(__file__).parent.parent))
+            from tracker_utils import save_tracker_data
+            
+            # Prepare metrics by legal entity
+            entity_metrics = []
+            for entity in selected_entities:
+                entity_df = df_filtered[df_filtered["Legal Entity"] == entity]
+                entity_total = len(entity_df)
+                entity_valid = entity_df[entity_df["gtin_status"].isin(valid_statuses)].shape[0]
+                entity_invalid = entity_df[entity_df["gtin_status"] == "INVALID"].shape[0]
+                entity_generic = entity_df[entity_df["gtin_status"] == "GENERIC"].shape[0]
+                entity_blocked = entity_df[entity_df["gtin_status"].isin(["PLACEHOLDER", "BLOCKED"])].shape[0]
+                entity_compliance = (entity_valid / entity_total * 100) if entity_total > 0 else 0
+                
+                entity_metrics.append({
+                    "legal_entity": entity,
+                    "total_products": entity_total,
+                    "valid_gtins": entity_valid,
+                    "invalid_gtins": entity_invalid,
+                    "generic_gtins": entity_generic,
+                    "placeholder_gtins": entity_blocked,
+                    "compliance_rate": round(entity_compliance, 2)
+                })
+            
+            # Save to tracker
+            tracker_entry = {
+                "analysis_type": "quality",
+                "legal_entities": selected_entities,
+                "total_products": len(df_filtered),
+                "total_valid": total_valid,
+                "total_invalid": total_invalid,
+                "total_generic": total_generic,
+                "total_placeholder": total_blocked,
+                "compliance_rate": round(compliance_rate, 2),
+                "breakdown": {
+                    "8_digits": total_8,
+                    "13_digits": total_13,
+                    "14_digits": total_14
+                },
+                "entity_metrics": entity_metrics
+            }
+            
+            if save_tracker_data(tracker_entry):
+                st.success("✅ Analysis saved to tracker successfully!")
+            else:
+                st.error("❌ Error saving analysis to tracker")
+    
+    st.markdown("<br>", unsafe_allow_html=True)  # Spacing
     
     # Load data
     with st.spinner("Loading and analyzing data..."):
@@ -479,59 +534,56 @@ def main():
     with col6:
         st.metric("📊 Breakdown", f"{total_8}/{total_13}/{total_14}", help="8 digits / 13 digits / 14 digits")
     
-    # Save Analysis button
-    st.markdown("---")
-    col_save, _ = st.columns([1, 5])
-    with col_save:
-        if st.button("💾 Save Analysis and Report to Tracker", use_container_width=True, type="primary"):
-            import sys
-            from pathlib import Path
-            sys.path.append(str(Path(__file__).parent.parent))
-            from tracker_utils import save_tracker_data
+    # Handle save button click (button is at the top, but logic is here after data is loaded)
+    if save_button_clicked:
+        import sys
+        from pathlib import Path
+        sys.path.append(str(Path(__file__).parent.parent))
+        from tracker_utils import save_tracker_data
+        
+        # Prepare metrics by legal entity
+        entity_metrics = []
+        for entity in selected_entities:
+            entity_df = df_filtered[df_filtered["Legal Entity"] == entity]
+            entity_total = len(entity_df)
+            entity_valid = entity_df[entity_df["gtin_status"].isin(valid_statuses)].shape[0]
+            entity_invalid = entity_df[entity_df["gtin_status"] == "INVALID"].shape[0]
+            entity_generic = entity_df[entity_df["gtin_status"] == "GENERIC"].shape[0]
+            entity_blocked = entity_df[entity_df["gtin_status"].isin(["PLACEHOLDER", "BLOCKED"])].shape[0]
+            entity_compliance = (entity_valid / entity_total * 100) if entity_total > 0 else 0
             
-            # Prepare metrics by legal entity
-            entity_metrics = []
-            for entity in selected_entities:
-                entity_df = df_filtered[df_filtered["Legal Entity"] == entity]
-                entity_total = len(entity_df)
-                entity_valid = entity_df[entity_df["gtin_status"].isin(valid_statuses)].shape[0]
-                entity_invalid = entity_df[entity_df["gtin_status"] == "INVALID"].shape[0]
-                entity_generic = entity_df[entity_df["gtin_status"] == "GENERIC"].shape[0]
-                entity_blocked = entity_df[entity_df["gtin_status"].isin(["PLACEHOLDER", "BLOCKED"])].shape[0]
-                entity_compliance = (entity_valid / entity_total * 100) if entity_total > 0 else 0
-                
-                entity_metrics.append({
-                    "legal_entity": entity,
-                    "total_products": entity_total,
-                    "valid_gtins": entity_valid,
-                    "invalid_gtins": entity_invalid,
-                    "generic_gtins": entity_generic,
-                    "placeholder_gtins": entity_blocked,
-                    "compliance_rate": round(entity_compliance, 2)
-                })
-            
-            # Save to tracker
-            tracker_entry = {
-                "analysis_type": "quality",
-                "legal_entities": selected_entities,
-                "total_products": len(df_filtered),
-                "total_valid": total_valid,
-                "total_invalid": total_invalid,
-                "total_generic": total_generic,
-                "total_placeholder": total_blocked,
-                "compliance_rate": round(compliance_rate, 2),
-                "breakdown": {
-                    "8_digits": total_8,
-                    "13_digits": total_13,
-                    "14_digits": total_14
-                },
-                "entity_metrics": entity_metrics
-            }
-            
-            if save_tracker_data(tracker_entry):
-                st.success("✅ Analysis saved to tracker successfully!")
-            else:
-                st.error("❌ Error saving analysis to tracker")
+            entity_metrics.append({
+                "legal_entity": entity,
+                "total_products": entity_total,
+                "valid_gtins": entity_valid,
+                "invalid_gtins": entity_invalid,
+                "generic_gtins": entity_generic,
+                "placeholder_gtins": entity_blocked,
+                "compliance_rate": round(entity_compliance, 2)
+            })
+        
+        # Save to tracker
+        tracker_entry = {
+            "analysis_type": "quality",
+            "legal_entities": selected_entities,
+            "total_products": len(df_filtered),
+            "total_valid": total_valid,
+            "total_invalid": total_invalid,
+            "total_generic": total_generic,
+            "total_placeholder": total_blocked,
+            "compliance_rate": round(compliance_rate, 2),
+            "breakdown": {
+                "8_digits": total_8,
+                "13_digits": total_13,
+                "14_digits": total_14
+            },
+            "entity_metrics": entity_metrics
+        }
+        
+        if save_tracker_data(tracker_entry):
+            st.success("✅ Analysis saved to tracker successfully!")
+        else:
+            st.error("❌ Error saving analysis to tracker")
     
     # Analysis by Legal Entity
     st.markdown('<div class="section-header">🏢 Analysis by Legal Entity</div>', unsafe_allow_html=True)
