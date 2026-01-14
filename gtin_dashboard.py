@@ -212,7 +212,7 @@ def has_valid_gs1_check_digit(gtin: str, length: int) -> bool:
 
 def classify_gtin_status(gtin_raw):
     """Classify GTIN according to MDM rules.
-    Returns: INVALID, GENERIC, BLOCKED, 8_digits, 13_digits, 14_digits
+    Returns: INVALID, GENERIC, PLACEHOLDER, 8_digits, 13_digits, 14_digits
     """
     if pd.isna(gtin_raw) or gtin_raw is None:
         return "INVALID"
@@ -222,7 +222,7 @@ def classify_gtin_status(gtin_raw):
         return "INVALID"
     
     if gtin == EXPLICIT_BLOCKED:
-        return "BLOCKED"
+        return "PLACEHOLDER"
     
     if gtin in GENERIC_GTINS:
         return "GENERIC"
@@ -435,7 +435,7 @@ def main():
     total_valid = df_filtered[df_filtered["gtin_status"].isin(valid_statuses)].shape[0]
     total_invalid = df_filtered[df_filtered["gtin_status"] == "INVALID"].shape[0]
     total_generic = df_filtered[df_filtered["gtin_status"] == "GENERIC"].shape[0]
-    total_blocked = df_filtered[df_filtered["gtin_status"] == "BLOCKED"].shape[0]
+    total_blocked = df_filtered[df_filtered["gtin_status"] == "PLACEHOLDER"].shape[0]
     total_8 = df_filtered[df_filtered["gtin_status"] == "8_digits"].shape[0]
     total_13 = df_filtered[df_filtered["gtin_status"] == "13_digits"].shape[0]
     total_14 = df_filtered[df_filtered["gtin_status"] == "14_digits"].shape[0]
@@ -452,7 +452,7 @@ def main():
     with col4:
         st.metric("⚠️ Generic GTINs", f"{total_generic:,}")
     with col5:
-        st.metric("🚫 Blocked GTINs", f"{total_blocked:,}")
+        st.metric("🚫 Placeholder GTINs (999...99)", f"{total_blocked:,}")
     with col6:
         st.metric("📊 Breakdown", f"{total_8}/{total_13}/{total_14}", help="8 digits / 13 digits / 14 digits")
     
@@ -470,7 +470,7 @@ def main():
         valid_count = sum(status_counts.get(s, 0) for s in valid_statuses)
         invalid_count = status_counts.get("INVALID", 0)
         generic_count = status_counts.get("GENERIC", 0)
-        blocked_count = status_counts.get("BLOCKED", 0)
+        blocked_count = status_counts.get("PLACEHOLDER", 0)
         
         compliance = (valid_count / total * 100) if total > 0 else 0
         
@@ -480,7 +480,7 @@ def main():
             "Valid GTINs": valid_count,
             "Invalid GTINs": invalid_count,
             "Generic GTINs": generic_count,
-            "Blocked GTINs": blocked_count,
+            "Placeholder GTINs (999...99)": blocked_count,
             "Compliance Rate (%)": round(compliance, 2),
             "8 digits": status_counts.get("8_digits", 0),
             "13 digits": status_counts.get("13_digits", 0),
@@ -582,7 +582,7 @@ def main():
     st.markdown('<div class="section-header">📊 Status Details by Legal Entity</div>', unsafe_allow_html=True)
     
     # Prepare data for stacked bar - melt for better visualization
-    status_cols = ["Valid GTINs", "Invalid GTINs", "Generic GTINs", "Blocked GTINs"]
+    status_cols = ["Valid GTINs", "Invalid GTINs", "Generic GTINs", "Placeholder GTINs (999...99)"]
     chart_data = analysis_df[["Legal Entity"] + status_cols].copy()
     chart_data = chart_data.sort_values("Legal Entity")
     
@@ -606,7 +606,7 @@ def main():
             "Valid GTINs": "#2ecc71",
             "Invalid GTINs": "#e74c3c",
             "Generic GTINs": "#f39c12",
-            "Blocked GTINs": "#34495e"
+            "Placeholder GTINs (999...99)": "#34495e"
         }
     )
     fig_stacked.update_layout(
@@ -703,11 +703,11 @@ def main():
         # Filter data for selected entity
         entity_data = df[df["Legal Entity"] == selected_entity_email].copy()
         
-        # Get Generic and Blocked GTINs
-        generic_blocked = entity_data[entity_data["gtin_status"].isin(["GENERIC", "BLOCKED"])].copy()
+        # Get Generic and Placeholder GTINs
+        generic_blocked = entity_data[entity_data["gtin_status"].isin(["GENERIC", "PLACEHOLDER"])].copy()
         
         generic_gtins = generic_blocked[generic_blocked["gtin_status"] == "GENERIC"].copy()
-        blocked_gtins = generic_blocked[generic_blocked["gtin_status"] == "BLOCKED"].copy()
+        blocked_gtins = generic_blocked[generic_blocked["gtin_status"] == "PLACEHOLDER"].copy()
         
         generic_count = len(generic_gtins)
         blocked_count = len(blocked_gtins)
@@ -721,7 +721,7 @@ def main():
                 summary_data = {
                     "Legal Entity": [selected_entity_email],
                     "Total Generic GTINs": [generic_count],
-                    "Total Blocked GTINs": [blocked_count],
+                    "Total Placeholder GTINs (999...99)": [blocked_count],
                     "Total to Review": [total_count],
                     "Report Date": [date.today().strftime("%Y-%m-%d")]
                 }
@@ -734,17 +734,17 @@ def main():
                         writer, sheet_name="Generic GTINs", index=False
                     )
                 
-                # Sheet 2: Blocked GTINs (if any)
+                # Sheet 2: Placeholder GTINs (if any)
                 if not blocked_gtins.empty:
                     # Include all columns from original dataframe (raw data)
                     blocked_gtins.to_excel(
-                        writer, sheet_name="Blocked GTINs", index=False
+                        writer, sheet_name="Placeholder GTINs (999...99)", index=False
                     )
             
             output.seek(0)
             
             # Generate email template in English
-            email_subject = f"Action Required: Review of Generic and Blocked GTINs - {selected_entity_email}"
+            email_subject = f"Action Required: Review of Generic and Placeholder GTINs - {selected_entity_email}"
             
             email_body = f"""Hello,
 
@@ -752,11 +752,11 @@ Your legal entity ({selected_entity_email}) has GTINs that require your attentio
 
 **Summary:**
 - Generic GTINs: {generic_count:,}
-- Blocked GTINs: {blocked_count:,}
+- Placeholder GTINs (999...99): {blocked_count:,}
 - Total GTINs to review: {total_count:,}
 
 **Action Required:**
-Please review the attached Excel file which contains the detailed list of Generic and Blocked GTINs for your legal entity. These GTINs must be updated or replaced with valid product GTIN codes.
+Please review the attached Excel file which contains the detailed list of Generic and Placeholder GTINs (999...99) for your legal entity. These GTINs must be updated or replaced with valid product GTIN codes.
 
 **Next Steps:**
 1. Review the attached file
@@ -877,7 +877,7 @@ Report generated on: {date.today().strftime("%B %d, %Y")}
             
             # Display preview
             st.markdown("### 📊 Report Preview")
-            st.info(f"**{selected_entity_email}**: {generic_count:,} Generic GTINs, {blocked_count:,} Blocked GTINs")
+            st.info(f"**{selected_entity_email}**: {generic_count:,} Generic GTINs, {blocked_count:,} Placeholder GTINs (999...99)")
             
             if not generic_gtins.empty:
                 st.markdown("#### Generic GTINs Sample (first 10)")
@@ -894,7 +894,7 @@ Report generated on: {date.today().strftime("%B %d, %Y")}
                     )
             
             if not blocked_gtins.empty:
-                st.markdown("#### Blocked GTINs Sample (first 10)")
+                st.markdown("#### Placeholder GTINs (999...99) Sample (first 10)")
                 preview_cols = ["SUPC", "Local Product Description", "Brand", "OSD Classification"]
                 # Add gtin_status and gtin_outer_normalized for context
                 additional_cols = ["gtin_outer_normalized", "gtin_status"]
@@ -907,7 +907,7 @@ Report generated on: {date.today().strftime("%B %d, %Y")}
                         hide_index=True
                     )
         else:
-            st.success(f"✅ **{selected_entity_email}** has no Generic or Blocked GTINs. No action required!")
+            st.success(f"✅ **{selected_entity_email}** has no Generic or Placeholder GTINs. No action required!")
     
     # Footer
     st.markdown("---")
