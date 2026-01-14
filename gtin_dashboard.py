@@ -13,12 +13,10 @@ OUTLOOK_AVAILABLE = False
 OUTLOOK_ERROR_MSG = None
 try:
     import win32com.client
-    # Test if we can actually create an Outlook object
-    # Note: We don't create it here to avoid blocking, just check if import works
     OUTLOOK_AVAILABLE = True
-except ImportError:
+except ImportError as e:
     OUTLOOK_AVAILABLE = False
-    OUTLOOK_ERROR_MSG = "pywin32 is not installed. Run: pip install pywin32"
+    OUTLOOK_ERROR_MSG = f"pywin32 is not installed. Run: pip install pywin32 (Error: {str(e)})"
 except Exception as e:
     OUTLOOK_AVAILABLE = False
     OUTLOOK_ERROR_MSG = f"Error importing win32com: {str(e)}"
@@ -821,17 +819,22 @@ Report generated on: {date.today().strftime("%B %d, %Y")}
                             st.info("You can still download the Excel file below.")
                 else:
                     error_msg = OUTLOOK_ERROR_MSG or "Outlook integration not available"
-                    st.info(f"⚠️ {error_msg}")
+                    st.warning(f"⚠️ {error_msg}")
                     with st.expander("ℹ️ How to enable Outlook integration"):
                         st.markdown("""
                         **To enable Outlook integration:**
                         1. Make sure you're running on Windows
-                        2. Install pywin32: `pip install pywin32` or `py -m pip install pywin32`
+                        2. If using a virtual environment, activate it and install: `pip install pywin32`
                         3. Make sure Outlook is installed and configured
-                        4. Restart the Streamlit app
+                        4. **Restart the Streamlit app completely** (stop and restart)
+                        5. Clear Streamlit cache if needed: `streamlit cache clear`
+                        
+                        **If using run_dashboard.bat:**
+                        - The venv should already have pywin32 installed
+                        - Make sure to stop Streamlit completely and restart it
                         
                         If you continue to see this message after installing pywin32, 
-                        try running: `py -m pywin32_postinstall -install`
+                        try running: `python -m pywin32_postinstall -install` in your venv
                         """)
             
             with col_download_excel:
