@@ -15,8 +15,12 @@ Votre code est maintenant sur GitHub ! Suivez ces étapes pour déployer sur Str
 ### 3. Configurer l'application
 - **Repository** : Sélectionnez `imse8006/GTIN_analysis`
 - **Branch** : `main` (par défaut)
-- **Main file path** : `gtin_dashboard.py`
+- **Main file path** : `gtin_dashboard.py` (ou `pages/1_GTIN_Quality_Dashboard.py` pour utiliser la navigation multi-pages)
 - **App URL** : Vous pouvez personnaliser (ex: `gtin-dashboard`)
+
+**Note:** Si vous utilisez `gtin_dashboard.py` comme point d'entrée, Streamlit détectera automatiquement le dossier `pages/` et créera une navigation multi-pages avec :
+- 📊 GTIN Quality Dashboard (page principale)
+- 🔍 Duplicate Analysis (analyse des doublons)
 
 ### 4. Déployer
 - Cliquez sur **"Deploy"**
