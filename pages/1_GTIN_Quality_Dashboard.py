@@ -43,7 +43,7 @@ st.set_page_config(
     page_title="GTIN Quality Dashboard - MDM Analysis",
     page_icon="📊",
     layout="wide",
-    initial_sidebar_state="expanded"  # Expanded to show navigation
+    initial_sidebar_state="expanded"
 )
 
 # Custom CSS for professional dark theme look
