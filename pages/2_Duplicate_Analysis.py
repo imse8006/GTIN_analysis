@@ -215,15 +215,6 @@ def main():
     st.markdown(f'<div style="text-align: center; color: #cbd5e1; margin-bottom: 0.5rem;">📁 Source file: <strong style="color: #60a5fa;">{INPUT_FILE}</strong></div>', unsafe_allow_html=True)
     
     # Save Analysis button - positioned right after source file with improved design
-    st.markdown("""
-    <style>
-    .save-button-container {
-        text-align: center;
-        margin: 1rem 0 1.5rem 0;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
     col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 2])
     with col_btn2:
         save_button_clicked = st.button(
@@ -232,6 +223,10 @@ def main():
             type="primary",
             key="save_duplicate_analysis_top"
         )
+        if save_button_clicked:
+            st.session_state["save_duplicate_requested"] = True
+    
+    st.markdown("<br>", unsafe_allow_html=True)  # Spacing
     
     # Load data
     with st.spinner("Loading data and analyzing duplicates..."):
@@ -275,7 +270,8 @@ def main():
             st.metric("🔀 Cross Duplicates", "N/A", "Inner column not found")
     
     # Handle save button click (button is at the top, but logic is here after data is loaded)
-    if save_button_clicked:
+    if st.session_state.get("save_duplicate_requested", False):
+        st.session_state["save_duplicate_requested"] = False  # Reset flag
         import sys
         from pathlib import Path
         sys.path.append(str(Path(__file__).parent.parent))

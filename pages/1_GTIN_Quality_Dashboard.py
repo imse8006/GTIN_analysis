@@ -535,7 +535,8 @@ def main():
         st.metric("📊 Breakdown", f"{total_8}/{total_13}/{total_14}", help="8 digits / 13 digits / 14 digits")
     
     # Handle save button click (button is at the top, but logic is here after data is loaded)
-    if save_button_clicked:
+    if st.session_state.get("save_quality_requested", False):
+        st.session_state["save_quality_requested"] = False  # Reset flag
         import sys
         from pathlib import Path
         sys.path.append(str(Path(__file__).parent.parent))
