@@ -782,7 +782,7 @@ def main():
                         first_name = name_parts[0].capitalize()
             
             # Build greeting with first name if available
-            greeting = f"Hello {first_name}," if first_name else "Hello,"
+            greeting = f"Hi {first_name}," if first_name else "Hi,"
             
             # Generate email template in English
             email_subject = f"Action Required: Review of Generic and Placeholder GTINs - {selected_entity_email}"
