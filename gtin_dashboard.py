@@ -435,7 +435,8 @@ def main():
     total_valid = df_filtered[df_filtered["gtin_status"].isin(valid_statuses)].shape[0]
     total_invalid = df_filtered[df_filtered["gtin_status"] == "INVALID"].shape[0]
     total_generic = df_filtered[df_filtered["gtin_status"] == "GENERIC"].shape[0]
-    total_blocked = df_filtered[df_filtered["gtin_status"] == "PLACEHOLDER"].shape[0]
+    # Accept both PLACEHOLDER and BLOCKED for backward compatibility with cached data
+    total_blocked = df_filtered[df_filtered["gtin_status"].isin(["PLACEHOLDER", "BLOCKED"])].shape[0]
     total_8 = df_filtered[df_filtered["gtin_status"] == "8_digits"].shape[0]
     total_13 = df_filtered[df_filtered["gtin_status"] == "13_digits"].shape[0]
     total_14 = df_filtered[df_filtered["gtin_status"] == "14_digits"].shape[0]
@@ -470,7 +471,8 @@ def main():
         valid_count = sum(status_counts.get(s, 0) for s in valid_statuses)
         invalid_count = status_counts.get("INVALID", 0)
         generic_count = status_counts.get("GENERIC", 0)
-        blocked_count = status_counts.get("PLACEHOLDER", 0)
+        # Accept both PLACEHOLDER and BLOCKED for backward compatibility
+        blocked_count = status_counts.get("PLACEHOLDER", 0) + status_counts.get("BLOCKED", 0)
         
         compliance = (valid_count / total * 100) if total > 0 else 0
         
@@ -703,11 +705,11 @@ def main():
         # Filter data for selected entity
         entity_data = df[df["Legal Entity"] == selected_entity_email].copy()
         
-        # Get Generic and Placeholder GTINs
-        generic_blocked = entity_data[entity_data["gtin_status"].isin(["GENERIC", "PLACEHOLDER"])].copy()
+        # Get Generic and Placeholder GTINs (accept both PLACEHOLDER and BLOCKED for backward compatibility)
+        generic_blocked = entity_data[entity_data["gtin_status"].isin(["GENERIC", "PLACEHOLDER", "BLOCKED"])].copy()
         
         generic_gtins = generic_blocked[generic_blocked["gtin_status"] == "GENERIC"].copy()
-        blocked_gtins = generic_blocked[generic_blocked["gtin_status"] == "PLACEHOLDER"].copy()
+        blocked_gtins = generic_blocked[generic_blocked["gtin_status"].isin(["PLACEHOLDER", "BLOCKED"])].copy()
         
         generic_count = len(generic_gtins)
         blocked_count = len(blocked_gtins)
