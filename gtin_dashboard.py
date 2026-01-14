@@ -133,7 +133,14 @@ st.markdown("""
         background: transparent !important;
         box-shadow: none !important;
     }
-    /* Hide empty elements and improve text input display */
+    /* Hide empty Streamlit elements */
+    [data-testid="stEmpty"] {
+        display: none !important;
+    }
+    div[data-testid="stElementContainer"]:has([data-testid="stEmpty"]) {
+        display: none !important;
+    }
+    /* Ensure subject field shows full text and is left-aligned */
     .stTextInput > div > div {
         width: 100% !important;
     }
@@ -796,23 +803,40 @@ Report generated on: {date.today().strftime("%B %d, %Y")}
             # Email subject - left-aligned and full width to see entire subject
             st.markdown("""
             <style>
-            div[data-testid="stTextInput"]:has(input[key="email_subject"]) {
+            /* Force left alignment for subject input */
+            div[data-testid="stTextInput"]:has(input[data-baseweb="input"][aria-label*="Subject"]) {
                 width: 100% !important;
+                text-align: left !important;
             }
-            div[data-testid="stTextInput"]:has(input[key="email_subject"]) > div > div {
-                width: 100% !important;
-                max-width: 100% !important;
-            }
-            div[data-testid="stTextInput"]:has(input[key="email_subject"]) input {
+            div[data-testid="stTextInput"]:has(input[data-baseweb="input"][aria-label*="Subject"]) > div {
                 width: 100% !important;
                 max-width: 100% !important;
+                text-align: left !important;
             }
-            label[for*="email_subject"] {
+            div[data-testid="stTextInput"]:has(input[data-baseweb="input"][aria-label*="Subject"]) input {
+                width: 100% !important;
+                max-width: 100% !important;
+                text-align: left !important;
+            }
+            /* Left align the label */
+            label[data-testid="stTextInputLabel"]:has(+ div input[aria-label*="Subject"]) {
+                text-align: left !important;
+                display: block !important;
+            }
+            /* Target by key attribute */
+            div[data-testid="stTextInput"] input[key="email_subject"] {
+                width: 100% !important;
+                max-width: 100% !important;
                 text-align: left !important;
             }
             </style>
             """, unsafe_allow_html=True)
-            st.text_input("Subject", value=email_subject, key="email_subject", label_visibility="visible")
+            
+            # Use a container to force left alignment
+            with st.container():
+                st.markdown('<div style="text-align: left; width: 100%;">', unsafe_allow_html=True)
+                st.text_input("Subject", value=email_subject, key="email_subject", label_visibility="visible")
+                st.markdown('</div>', unsafe_allow_html=True)
             
             # Email body with better styling
             st.text_area("Email Body", value=email_body, height=300, key="email_body")
