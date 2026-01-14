@@ -133,6 +133,18 @@ st.markdown("""
         background: transparent !important;
         box-shadow: none !important;
     }
+    /* Hide empty elements and improve text input display */
+    .stTextInput > div > div {
+        width: 100% !important;
+    }
+    .stTextInput input {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+    /* Ensure subject field shows full text */
+    div[data-testid="stTextInput"] {
+        width: 100% !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -781,8 +793,26 @@ Report generated on: {date.today().strftime("%B %d, %Y")}
             # Display email template with improved design
             st.markdown("### 📝 Email Template")
             
-            # Email subject
-            st.text_input("Subject", value=email_subject, key="email_subject")
+            # Email subject - left-aligned and full width to see entire subject
+            st.markdown("""
+            <style>
+            div[data-testid="stTextInput"]:has(input[key="email_subject"]) {
+                width: 100% !important;
+            }
+            div[data-testid="stTextInput"]:has(input[key="email_subject"]) > div > div {
+                width: 100% !important;
+                max-width: 100% !important;
+            }
+            div[data-testid="stTextInput"]:has(input[key="email_subject"]) input {
+                width: 100% !important;
+                max-width: 100% !important;
+            }
+            label[for*="email_subject"] {
+                text-align: left !important;
+            }
+            </style>
+            """, unsafe_allow_html=True)
+            st.text_input("Subject", value=email_subject, key="email_subject", label_visibility="visible")
             
             # Email body with better styling
             st.text_area("Email Body", value=email_body, height=300, key="email_body")
