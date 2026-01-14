@@ -764,10 +764,30 @@ def main():
             
             output.seek(0)
             
+            # Get recipients for this legal entity
+            recipients = LEGAL_ENTITY_EMAILS.get(selected_entity_email, [])
+            recipients_str = "; ".join(recipients) if recipients else ""
+            
+            # Extract first name from recipient email
+            first_name = ""
+            if recipients:
+                # Get the first recipient's email
+                first_email = recipients[0]
+                # Extract name before @ or before dot
+                if "@" in first_email:
+                    name_part = first_email.split("@")[0]
+                    # Remove hyphens and get first part
+                    name_parts = name_part.replace("-", ".").split(".")
+                    if name_parts:
+                        first_name = name_parts[0].capitalize()
+            
+            # Build greeting with first name if available
+            greeting = f"Hello {first_name}," if first_name else "Hello,"
+            
             # Generate email template in English
             email_subject = f"Action Required: Review of Generic and Placeholder GTINs - {selected_entity_email}"
             
-            email_body = f"""Hello,
+            email_body = f"""{greeting}
 
 Your legal entity ({selected_entity_email}) has GTINs that require your attention and action.
 
@@ -793,54 +813,6 @@ Best regards
 Report generated on: {date.today().strftime("%B %d, %Y")}
 """
             
-            # Get recipients for this legal entity
-            recipients = LEGAL_ENTITY_EMAILS.get(selected_entity_email, [])
-            recipients_str = "; ".join(recipients) if recipients else ""
-            
-            # Display email template with improved design
-            st.markdown("### 📝 Email Template")
-            
-            # Email subject - left-aligned and full width to see entire subject
-            st.markdown("""
-            <style>
-            /* Force left alignment for subject input */
-            div[data-testid="stTextInput"]:has(input[data-baseweb="input"][aria-label*="Subject"]) {
-                width: 100% !important;
-                text-align: left !important;
-            }
-            div[data-testid="stTextInput"]:has(input[data-baseweb="input"][aria-label*="Subject"]) > div {
-                width: 100% !important;
-                max-width: 100% !important;
-                text-align: left !important;
-            }
-            div[data-testid="stTextInput"]:has(input[data-baseweb="input"][aria-label*="Subject"]) input {
-                width: 100% !important;
-                max-width: 100% !important;
-                text-align: left !important;
-            }
-            /* Left align the label */
-            label[data-testid="stTextInputLabel"]:has(+ div input[aria-label*="Subject"]) {
-                text-align: left !important;
-                display: block !important;
-            }
-            /* Target by key attribute */
-            div[data-testid="stTextInput"] input[key="email_subject"] {
-                width: 100% !important;
-                max-width: 100% !important;
-                text-align: left !important;
-            }
-            </style>
-            """, unsafe_allow_html=True)
-            
-            # Use a container to force left alignment
-            with st.container():
-                st.markdown('<div style="text-align: left; width: 100%;">', unsafe_allow_html=True)
-                st.text_input("Subject", value=email_subject, key="email_subject", label_visibility="visible")
-                st.markdown('</div>', unsafe_allow_html=True)
-            
-            # Email body with better styling
-            st.text_area("Email Body", value=email_body, height=300, key="email_body")
-            
             # Create Excel filename
             excel_filename = f"GTIN_Review_{selected_entity_email.replace(' ', '_').replace('/', '_')}_{date.today().isoformat()}.xlsx"
             
@@ -857,14 +829,13 @@ Report generated on: {date.today().strftime("%B %d, %Y")}
             output.seek(0)
             
             # Create .eml file for download (works on all platforms)
-            # Create email message
             msg = MIMEMultipart()
             msg['Subject'] = email_subject
-            msg['From'] = "MDM Team <mdm@sysco.com>"  # Can be customized
+            msg['From'] = "MDM Team <mdm@sysco.com>"
             if recipients:
                 msg['To'] = ", ".join(recipients)
             else:
-                msg['To'] = ""  # Will be filled by user
+                msg['To'] = ""
             
             # Add body
             msg.attach(MIMEText(email_body, 'plain', 'utf-8'))
@@ -874,45 +845,53 @@ Report generated on: {date.today().strftime("%B %d, %Y")}
             attachment = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
             attachment.set_payload(output.read())
             encoders.encode_base64(attachment)
-            attachment.add_header(
-                'Content-Disposition',
-                f'attachment; filename= {excel_filename}'
-            )
+            attachment.add_header('Content-Disposition', f'attachment; filename= {excel_filename}')
             msg.attach(attachment)
             
             # Convert to .eml format
             eml_output = io.BytesIO()
             eml_output.write(msg.as_bytes())
             eml_output.seek(0)
+            output.seek(0)
             
-            # Download buttons with improved design
-            st.markdown("### 📥 Download Options")
+            # Display email template with improved design
+            st.markdown("### 📝 Email Template")
             
-            col_download_eml, col_download_excel = st.columns([2, 1])
+            # Subject and download icons in same row - subject left-aligned, icons on right
+            col_subject, col_icons = st.columns([4, 1])
             
-            with col_download_eml:
-                eml_filename = f"Email_Draft_{selected_entity_email.replace(' ', '_').replace('/', '_')}_{date.today().isoformat()}.eml"
-                st.download_button(
-                    label="📧 Download Email with Attachment (.eml)",
-                    data=eml_output,
-                    file_name=eml_filename,
-                    mime="message/rfc822",
-                    use_container_width=True,
-                    key="download_eml_main",
-                    help="Download the complete email with Excel attachment. Double-click to open in Outlook."
-                )
-                st.caption("💡 Double-click the .eml file to open it in Outlook with all recipients and attachment pre-filled")
+            with col_subject:
+                st.text_input("Subject", value=email_subject, key="email_subject", label_visibility="visible")
             
-            with col_download_excel:
-                st.download_button(
-                    label="📎 Download Excel Only",
-                    data=output,
-                    file_name=excel_filename,
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    use_container_width=True,
-                    key="download_excel_main",
-                    help="Download only the Excel file without the email"
-                )
+            with col_icons:
+                st.markdown("<br>", unsafe_allow_html=True)  # Spacing to align with input field
+                col_dl_eml, col_dl_excel = st.columns(2)
+                
+                with col_dl_eml:
+                    eml_filename = f"Email_Draft_{selected_entity_email.replace(' ', '_').replace('/', '_')}_{date.today().isoformat()}.eml"
+                    st.download_button(
+                        label="📥",
+                        data=eml_output,
+                        file_name=eml_filename,
+                        mime="message/rfc822",
+                        use_container_width=True,
+                        key="download_eml_icon",
+                        help="Download email with attachment (.eml)"
+                    )
+                
+                with col_dl_excel:
+                    st.download_button(
+                        label="📊",
+                        data=output,
+                        file_name=excel_filename,
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                        key="download_excel_icon",
+                        help="Download Excel file only"
+                    )
+            
+            # Email body with better styling
+            st.text_area("Email Body", value=email_body, height=300, key="email_body")
             
             # Show recipients info with better styling
             st.markdown("---")
