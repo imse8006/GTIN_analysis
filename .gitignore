@@ -33,6 +33,9 @@ Thumbs.db
 # Reports
 gtin_report_*/
 
+# Tracker data
+tracker_data.json
+
 # Build
 dist/
 build/
