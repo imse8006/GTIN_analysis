@@ -776,17 +776,13 @@ Report generated on: {date.today().strftime("%B %d, %Y")}
             recipients = LEGAL_ENTITY_EMAILS.get(selected_entity_email, [])
             recipients_str = "; ".join(recipients) if recipients else ""
             
-            # Display email template
+            # Display email template with improved design
             st.markdown("### 📝 Email Template")
             
-            col_subject, col_copy = st.columns([4, 1])
-            with col_subject:
-                st.text_input("Subject", value=email_subject, key="email_subject")
-            with col_copy:
-                st.markdown("<br>", unsafe_allow_html=True)
-                if st.button("📋 Copy Subject", use_container_width=True, key="copy_subject"):
-                    st.success("✓ Copied!")
+            # Email subject
+            st.text_input("Subject", value=email_subject, key="email_subject")
             
+            # Email body with better styling
             st.text_area("Email Body", value=email_body, height=300, key="email_body")
             
             # Create Excel filename
@@ -833,86 +829,23 @@ Report generated on: {date.today().strftime("%B %d, %Y")}
             eml_output.write(msg.as_bytes())
             eml_output.seek(0)
             
-            # Buttons for actions
-            if OUTLOOK_AVAILABLE:
-                col_open_outlook, col_download_excel, col_download_eml = st.columns([1, 1, 1])
-                
-                with col_open_outlook:
-                    if st.button("📧 Open in Outlook", use_container_width=True, key="open_outlook"):
-                        try:
-                            # Create Outlook application
-                            outlook = win32com.client.Dispatch("Outlook.Application")
-                            mail = outlook.CreateItem(0)  # 0 = olMailItem
-                            
-                            # Set email properties
-                            mail.Subject = email_subject
-                            mail.Body = email_body
-                            
-                            # Set recipients
-                            if recipients:
-                                for recipient in recipients:
-                                    mail.Recipients.Add(recipient)
-                            
-                            # Attach Excel file
-                            mail.Attachments.Add(temp_excel_path)
-                            
-                            # Display email (user can add signature manually)
-                            mail.Display(True)
-                            
-                            st.success(f"✅ Outlook email opened! Recipients: {recipients_str if recipients_str else 'None configured'}")
-                        except Exception as e:
-                            st.error(f"❌ Error opening Outlook: {str(e)}")
-                            st.info("You can still download the Excel file or .eml file below.")
-                
-                with col_download_excel:
-                    st.download_button(
-                        label="📎 Download Excel Only",
-                        data=output,
-                        file_name=excel_filename,
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                        key="download_excel"
-                    )
-                
-                with col_download_eml:
-                    st.download_button(
-                        label="📧 Download Outlook Draft (.eml)",
-                        data=eml_output,
-                        file_name=f"Email_Draft_{selected_entity_email.replace(' ', '_').replace('/', '_')}_{date.today().isoformat()}.eml",
-                        mime="message/rfc822",
-                        use_container_width=True,
-                        key="download_eml",
-                        help="Double-click this file to open in Outlook with the Excel attachment"
-                    )
-            else:
-                # Not on Windows or Outlook not available - show download options
-                col_download_excel, col_download_eml = st.columns([1, 1])
-                
-                with col_download_excel:
-                    st.download_button(
-                        label="📎 Download Excel Only",
-                        data=output,
-                        file_name=excel_filename,
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                        key="download_excel"
-                    )
-                
-                with col_download_eml:
-                    st.download_button(
-                        label="📧 Download Outlook Draft (.eml)",
-                        data=eml_output,
-                        file_name=f"Email_Draft_{selected_entity_email.replace(' ', '_').replace('/', '_')}_{date.today().isoformat()}.eml",
-                        mime="message/rfc822",
-                        use_container_width=True,
-                        key="download_eml",
-                        help="Download .eml file to open in Outlook on Windows. Double-click the file to open it."
-                    )
-                
-                error_msg = OUTLOOK_ERROR_MSG or "Outlook integration not available"
-                st.info(f"ℹ️ {error_msg}")
-                if not IS_WINDOWS:
-                    st.info("💡 **Tip:** Download the .eml file above and open it on a Windows machine with Outlook installed.")
+            # Download buttons with improved design
+            st.markdown("### 📥 Download Options")
+            
+            col_download_eml, col_download_excel = st.columns([2, 1])
+            
+            with col_download_eml:
+                eml_filename = f"Email_Draft_{selected_entity_email.replace(' ', '_').replace('/', '_')}_{date.today().isoformat()}.eml"
+                st.download_button(
+                    label="📧 Download Email with Attachment (.eml)",
+                    data=eml_output,
+                    file_name=eml_filename,
+                    mime="message/rfc822",
+                    use_container_width=True,
+                    key="download_eml_main",
+                    help="Download the complete email with Excel attachment. Double-click to open in Outlook."
+                )
+                st.caption("💡 Double-click the .eml file to open it in Outlook with all recipients and attachment pre-filled")
             
             with col_download_excel:
                 st.download_button(
@@ -921,14 +854,26 @@ Report generated on: {date.today().strftime("%B %d, %Y")}
                     file_name=excel_filename,
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     use_container_width=True,
-                    key="download_excel"
+                    key="download_excel_main",
+                    help="Download only the Excel file without the email"
                 )
             
-            # Show recipients info
+            # Show recipients info with better styling
+            st.markdown("---")
             if recipients:
-                st.info(f"📧 **Recipients configured for {selected_entity_email}:** {recipients_str}")
+                st.markdown(f"""
+                <div style="background-color: #1e293b; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #60a5fa; margin: 1rem 0;">
+                    <strong style="color: #60a5fa;">📧 Email Recipients for {selected_entity_email}:</strong><br>
+                    <span style="color: #cbd5e1;">{recipients_str}</span>
+                </div>
+                """, unsafe_allow_html=True)
             else:
-                st.warning(f"⚠️ No email recipients configured for **{selected_entity_email}**. Please add them manually in Outlook.")
+                st.markdown(f"""
+                <div style="background-color: #1e293b; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #f39c12; margin: 1rem 0;">
+                    <strong style="color: #f39c12;">⚠️ No email recipients configured for {selected_entity_email}</strong><br>
+                    <span style="color: #cbd5e1;">Please add recipients manually when opening the .eml file in Outlook.</span>
+                </div>
+                """, unsafe_allow_html=True)
             
             # Display preview
             st.markdown("### 📊 Report Preview")
