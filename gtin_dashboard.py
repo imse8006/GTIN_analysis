@@ -9,11 +9,19 @@ import tempfile
 import os
 
 # Try to import win32com for Outlook integration (Windows only)
+OUTLOOK_AVAILABLE = False
+OUTLOOK_ERROR_MSG = None
 try:
     import win32com.client
+    # Test if we can actually create an Outlook object
+    # Note: We don't create it here to avoid blocking, just check if import works
     OUTLOOK_AVAILABLE = True
 except ImportError:
     OUTLOOK_AVAILABLE = False
+    OUTLOOK_ERROR_MSG = "pywin32 is not installed. Run: pip install pywin32"
+except Exception as e:
+    OUTLOOK_AVAILABLE = False
+    OUTLOOK_ERROR_MSG = f"Error importing win32com: {str(e)}"
 
 # Page configuration
 st.set_page_config(
@@ -92,6 +100,23 @@ st.markdown("""
         border-radius: 0.5rem;
         padding: 1.5rem;
         border: 1px solid #334155;
+    }
+    /* Hide spinner borders and status indicators */
+    [data-testid="stStatusWidget"] {
+        display: none !important;
+    }
+    /* Hide the status box with black borders */
+    div[data-testid="stStatusWidget"] {
+        display: none !important;
+    }
+    /* Hide spinner container borders */
+    .stSpinner {
+        border: none !important;
+    }
+    .stSpinner > div {
+        border: none !important;
+        background: transparent !important;
+        box-shadow: none !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -285,86 +310,38 @@ def check_password():
         </style>
     """, unsafe_allow_html=True)
     
-    # First run, show input for password
-    if "password_correct" not in st.session_state:
-        st.markdown('<div class="login-wrapper">', unsafe_allow_html=True)
-        st.markdown('<div class="login-card">', unsafe_allow_html=True)
-        
-        st.markdown('<div class="login-title">GTIN Quality Dashboard</div>', unsafe_allow_html=True)
-        st.markdown('<div class="login-subtitle">MDM Analysis Portal</div>', unsafe_allow_html=True)
-        
-        password = st.text_input(
-            "Password",
-            type="password",
-            on_change=password_entered,
-            key="password",
-            label_visibility="visible"
-        )
-        
-        if "password" in st.session_state and st.session_state.get("password_correct", None) == False:
-            st.error("Incorrect password")
-        
-        st.markdown('</div>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-        return False
-    
-    # Password correct
-    elif st.session_state["password_correct"]:
+    # Check if password is already correct - return immediately without showing anything
+    if st.session_state.get("password_correct", False):
         return True
     
-    # Password incorrect - show again
-    else:
-        st.markdown("""
-            <style>
-            .login-wrapper {
-                padding: 2rem 0;
-                display: flex;
-                justify-content: center;
-            }
-            .login-card {
-                max-width: 400px;
-                width: 100%;
-                text-align: center;
-            }
-            .login-title {
-                color: #60a5fa;
-                font-size: 2.5rem;
-                font-weight: 700;
-                margin-bottom: 0.5rem;
-                text-align: center;
-            }
-            .login-subtitle {
-                color: #94a3b8;
-                font-size: 0.9rem;
-                text-align: center;
-                margin-bottom: 1.5rem;
-            }
-            .stTextInput {
-                max-width: 300px;
-                margin: 0 auto;
-            }
-            </style>
-        """, unsafe_allow_html=True)
-        
-        st.markdown('<div class="login-wrapper">', unsafe_allow_html=True)
-        st.markdown('<div class="login-card">', unsafe_allow_html=True)
-        
-        st.markdown('<div class="login-title">GTIN Quality Dashboard</div>', unsafe_allow_html=True)
-        st.markdown('<div class="login-subtitle">MDM Analysis Portal</div>', unsafe_allow_html=True)
-        
-        st.text_input(
-            "Password",
-            type="password",
-            on_change=password_entered,
-            key="password",
-            label_visibility="visible"
-        )
-        
+    # Show login form (first run or incorrect password)
+    st.markdown('<div class="login-wrapper">', unsafe_allow_html=True)
+    st.markdown('<div class="login-card">', unsafe_allow_html=True)
+    
+    st.markdown('<div class="login-title">GTIN Quality Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="login-subtitle">MDM Analysis Portal</div>', unsafe_allow_html=True)
+    
+    password = st.text_input(
+        "Password",
+        type="password",
+        on_change=password_entered,
+        key="password",
+        label_visibility="visible"
+    )
+    
+    # Check if password was just entered and was incorrect
+    if "password" in st.session_state and st.session_state.get("password_correct", None) == False:
         st.error("Incorrect password")
-        
+    
+    # If password was just entered correctly, rerun to refresh page
+    if st.session_state.get("password_correct", False):
         st.markdown('</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
-        return False
+        st.rerun()
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+    return False
 
 
 def main():
@@ -843,7 +820,19 @@ Report generated on: {date.today().strftime("%B %d, %Y")}
                             st.error(f"❌ Error opening Outlook: {str(e)}")
                             st.info("You can still download the Excel file below.")
                 else:
-                    st.info("⚠️ Outlook integration not available (requires Windows with Outlook installed)")
+                    error_msg = OUTLOOK_ERROR_MSG or "Outlook integration not available"
+                    st.info(f"⚠️ {error_msg}")
+                    with st.expander("ℹ️ How to enable Outlook integration"):
+                        st.markdown("""
+                        **To enable Outlook integration:**
+                        1. Make sure you're running on Windows
+                        2. Install pywin32: `pip install pywin32` or `py -m pip install pywin32`
+                        3. Make sure Outlook is installed and configured
+                        4. Restart the Streamlit app
+                        
+                        If you continue to see this message after installing pywin32, 
+                        try running: `py -m pywin32_postinstall -install`
+                        """)
             
             with col_download_excel:
                 st.download_button(
