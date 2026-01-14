@@ -7,21 +7,36 @@ import io
 import base64
 import tempfile
 import os
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
 
 # Try to import win32com for Outlook integration (Windows only)
 OUTLOOK_AVAILABLE = False
 OUTLOOK_ERROR_MSG = None
 import sys
-try:
-    import win32com.client
-    OUTLOOK_AVAILABLE = True
-except ImportError as e:
+import platform
+
+# Check if running on Windows
+IS_WINDOWS = platform.system() == "Windows"
+
+if IS_WINDOWS:
+    try:
+        import win32com.client
+        OUTLOOK_AVAILABLE = True
+    except ImportError as e:
+        OUTLOOK_AVAILABLE = False
+        python_path = sys.executable
+        OUTLOOK_ERROR_MSG = f"pywin32 is not installed in the Python environment used by Streamlit. Python path: {python_path}"
+    except Exception as e:
+        OUTLOOK_AVAILABLE = False
+        OUTLOOK_ERROR_MSG = f"Error importing win32com: {str(e)}"
+else:
+    # Not on Windows - Outlook integration not available
     OUTLOOK_AVAILABLE = False
     python_path = sys.executable
-    OUTLOOK_ERROR_MSG = f"pywin32 is not installed in the Python environment used by Streamlit. Python path: {python_path}"
-except Exception as e:
-    OUTLOOK_AVAILABLE = False
-    OUTLOOK_ERROR_MSG = f"Error importing win32com: {str(e)}"
+    OUTLOOK_ERROR_MSG = f"Outlook integration is only available on Windows. Current system: {platform.system()}, Python path: {python_path}"
 
 # Page configuration
 st.set_page_config(
@@ -789,11 +804,40 @@ Report generated on: {date.today().strftime("%B %d, %Y")}
             # Reset output for Excel download
             output.seek(0)
             
-            # Buttons for actions
-            col_open_outlook, col_download_excel = st.columns([1, 1])
+            # Create .eml file for download (works on all platforms)
+            # Create email message
+            msg = MIMEMultipart()
+            msg['Subject'] = email_subject
+            msg['From'] = "MDM Team <mdm@sysco.com>"  # Can be customized
+            if recipients:
+                msg['To'] = ", ".join(recipients)
+            else:
+                msg['To'] = ""  # Will be filled by user
             
-            with col_open_outlook:
-                if OUTLOOK_AVAILABLE:
+            # Add body
+            msg.attach(MIMEText(email_body, 'plain', 'utf-8'))
+            
+            # Add Excel attachment
+            output.seek(0)
+            attachment = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            attachment.set_payload(output.read())
+            encoders.encode_base64(attachment)
+            attachment.add_header(
+                'Content-Disposition',
+                f'attachment; filename= {excel_filename}'
+            )
+            msg.attach(attachment)
+            
+            # Convert to .eml format
+            eml_output = io.BytesIO()
+            eml_output.write(msg.as_bytes())
+            eml_output.seek(0)
+            
+            # Buttons for actions
+            if OUTLOOK_AVAILABLE:
+                col_open_outlook, col_download_excel, col_download_eml = st.columns([1, 1, 1])
+                
+                with col_open_outlook:
                     if st.button("📧 Open in Outlook", use_container_width=True, key="open_outlook"):
                         try:
                             # Create Outlook application
@@ -818,28 +862,57 @@ Report generated on: {date.today().strftime("%B %d, %Y")}
                             st.success(f"✅ Outlook email opened! Recipients: {recipients_str if recipients_str else 'None configured'}")
                         except Exception as e:
                             st.error(f"❌ Error opening Outlook: {str(e)}")
-                            st.info("You can still download the Excel file below.")
-                else:
-                    error_msg = OUTLOOK_ERROR_MSG or "Outlook integration not available"
-                    st.warning(f"⚠️ {error_msg}")
-                    with st.expander("ℹ️ How to enable Outlook integration"):
-                        python_path = sys.executable
-                        st.markdown(f"""
-                        **To enable Outlook integration:**
-                        1. Make sure you're running on Windows
-                        2. **Current Python path:** `{python_path}`
-                        3. Install pywin32 in the correct environment:
-                           - If using venv: `venv\\Scripts\\python.exe -m pip install pywin32`
-                           - Or activate venv first: `venv\\Scripts\\activate.bat` then `pip install pywin32`
-                        4. Make sure Outlook is installed and configured
-                        5. **Restart the Streamlit app completely** (stop and restart)
-                        6. Clear Streamlit cache if needed: `streamlit cache clear`
-                        
-                        **If using run_dashboard.bat:**
-                        - Make sure the venv is activated before running Streamlit
-                        - Verify pywin32 is installed: `venv\\Scripts\\python.exe -c "import win32com.client; print('OK')"`
-                        - Stop Streamlit completely (Ctrl+C) and restart it
-                        """)
+                            st.info("You can still download the Excel file or .eml file below.")
+                
+                with col_download_excel:
+                    st.download_button(
+                        label="📎 Download Excel Only",
+                        data=output,
+                        file_name=excel_filename,
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                        key="download_excel"
+                    )
+                
+                with col_download_eml:
+                    st.download_button(
+                        label="📧 Download Outlook Draft (.eml)",
+                        data=eml_output,
+                        file_name=f"Email_Draft_{selected_entity_email.replace(' ', '_').replace('/', '_')}_{date.today().isoformat()}.eml",
+                        mime="message/rfc822",
+                        use_container_width=True,
+                        key="download_eml",
+                        help="Double-click this file to open in Outlook with the Excel attachment"
+                    )
+            else:
+                # Not on Windows or Outlook not available - show download options
+                col_download_excel, col_download_eml = st.columns([1, 1])
+                
+                with col_download_excel:
+                    st.download_button(
+                        label="📎 Download Excel Only",
+                        data=output,
+                        file_name=excel_filename,
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                        key="download_excel"
+                    )
+                
+                with col_download_eml:
+                    st.download_button(
+                        label="📧 Download Outlook Draft (.eml)",
+                        data=eml_output,
+                        file_name=f"Email_Draft_{selected_entity_email.replace(' ', '_').replace('/', '_')}_{date.today().isoformat()}.eml",
+                        mime="message/rfc822",
+                        use_container_width=True,
+                        key="download_eml",
+                        help="Download .eml file to open in Outlook on Windows. Double-click the file to open it."
+                    )
+                
+                error_msg = OUTLOOK_ERROR_MSG or "Outlook integration not available"
+                st.info(f"ℹ️ {error_msg}")
+                if not IS_WINDOWS:
+                    st.info("💡 **Tip:** Download the .eml file above and open it on a Windows machine with Outlook installed.")
             
             with col_download_excel:
                 st.download_button(
