@@ -174,9 +174,34 @@ def analyze_duplicates(df, gtin_outer_col, gtin_inner_col):
     return results
 
 
+def check_password():
+    """Returns `True` if the user had the correct password."""
+    def password_entered():
+        correct_password = st.secrets.get("PASSWORD", "OSDTeam123")
+        if st.session_state["password"] == correct_password:
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]
+        else:
+            st.session_state["password_correct"] = False
+    
+    if "password_correct" not in st.session_state:
+        st.markdown('<div style="text-align: center; padding: 2rem;">', unsafe_allow_html=True)
+        st.markdown('<div style="color: #60a5fa; font-size: 2.5rem; font-weight: 700; margin-bottom: 0.5rem;">GTIN Duplicate Analysis</div>', unsafe_allow_html=True)
+        password = st.text_input("Password", type="password", on_change=password_entered, key="password", label_visibility="visible")
+        if "password" in st.session_state and st.session_state.get("password_correct", None) == False:
+            st.error("Incorrect password")
+        st.markdown('</div>', unsafe_allow_html=True)
+        if st.session_state.get("password_correct", False):
+            st.rerun()
+        return False
+    
+    if st.session_state.get("password_correct", False):
+        return True
+    return False
+
+
 def main():
-    # Password protection (reuse from main dashboard)
-    from gtin_dashboard import check_password
+    # Password protection
     if not check_password():
         st.stop()
     
