@@ -171,13 +171,24 @@ st.markdown("""
         padding-top: 1.5rem !important;
     }
     /* Increase multiselect height to align with Reset buttons */
+    div[data-testid="stMultiSelect"] {
+        min-height: 5.5rem !important;
+    }
+    div[data-testid="stMultiSelect"] > div {
+        min-height: 5.5rem !important;
+    }
     div[data-testid="stMultiSelect"] > div > div {
         min-height: 5.5rem !important;
     }
-    /* Hide empty filter-section divs */
+    /* Hide empty filter-section divs and empty containers */
     div.filter-section:empty,
-    div[class*="filter-section"]:empty {
+    div[class*="filter-section"]:empty,
+    div[data-testid="stElementContainer"]:has(div.filter-section:empty),
+    div[data-testid="stElementContainer"]:has(div[class*="filter-section"]:empty) {
         display: none !important;
+        height: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -469,17 +480,39 @@ def main():
     
     st.markdown('</div>', unsafe_allow_html=True)
     
-    # Ensure filter-section div is properly closed and doesn't create empty elements
+    # Ensure filter-section div is properly closed and remove empty elements
     st.markdown("""
     <script>
     (function() {
-        // Remove empty filter-section divs
-        const emptyDivs = document.querySelectorAll('div.filter-section:empty, div[class*="filter-section"]:empty');
-        emptyDivs.forEach(div => {
-            if (div.textContent.trim() === '' && div.children.length === 0) {
-                div.remove();
+        setTimeout(function() {
+            // Remove empty filter-section divs and their containers
+            const containers = document.querySelectorAll('div[data-testid="stElementContainer"]');
+            containers.forEach(container => {
+                const filterSection = container.querySelector('div.filter-section, div[class*="filter-section"]');
+                if (filterSection && (filterSection.textContent.trim() === '' || filterSection.children.length === 0)) {
+                    container.style.display = 'none';
+                    container.remove();
+                }
+            });
+            
+            // Force multiselect height to match Reset buttons
+            const multiselect = document.querySelector('div[data-testid="stMultiSelect"]');
+            const resetColumn = document.querySelector('div[data-testid="column"]:has(button)');
+            if (multiselect && resetColumn) {
+                const resetButtons = resetColumn.querySelectorAll('button');
+                let totalHeight = 0;
+                resetButtons.forEach(btn => {
+                    totalHeight += btn.offsetHeight + 8; // 8px for gap
+                });
+                if (totalHeight > 0) {
+                    multiselect.style.minHeight = totalHeight + 'px';
+                    const multiselectInner = multiselect.querySelector('div > div');
+                    if (multiselectInner) {
+                        multiselectInner.style.minHeight = totalHeight + 'px';
+                    }
+                }
             }
-        });
+        }, 100);
     })();
     </script>
     """, unsafe_allow_html=True)
