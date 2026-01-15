@@ -105,6 +105,20 @@ st.markdown("""
     .stApp {
         background-color: #0f172a;
     }
+    /* Custom Save button styling - softer blue */
+    button[kind="primary"][data-testid="baseButton-save_quality_analysis_top"] {
+        background-color: #3b82f6 !important;
+        border-color: #3b82f6 !important;
+        color: white !important;
+        font-weight: 600 !important;
+        transition: all 0.3s ease !important;
+    }
+    button[kind="primary"][data-testid="baseButton-save_quality_analysis_top"]:hover {
+        background-color: #2563eb !important;
+        border-color: #2563eb !important;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4) !important;
+    }
     /* Style for selectbox and multiselect in dark theme */
     .stSelectbox label, .stMultiSelect label {
         color: #cbd5e1 !important;
