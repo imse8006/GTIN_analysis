@@ -170,6 +170,15 @@ st.markdown("""
     div[data-testid="column"]:has(button:contains("Reset")) {
         padding-top: 1.5rem !important;
     }
+    /* Increase multiselect height to align with Reset buttons */
+    div[data-testid="stMultiSelect"] > div > div {
+        min-height: 5.5rem !important;
+    }
+    /* Hide empty filter-section divs */
+    div.filter-section:empty,
+    div[class*="filter-section"]:empty {
+        display: none !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -459,6 +468,21 @@ def main():
         st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Ensure filter-section div is properly closed and doesn't create empty elements
+    st.markdown("""
+    <script>
+    (function() {
+        // Remove empty filter-section divs
+        const emptyDivs = document.querySelectorAll('div.filter-section:empty, div[class*="filter-section"]:empty');
+        emptyDivs.forEach(div => {
+            if (div.textContent.trim() === '' && div.children.length === 0) {
+                div.remove();
+            }
+        });
+    })();
+    </script>
+    """, unsafe_allow_html=True)
     
     # Use session state for filtering
     selected_entities = st.session_state.selected_entities
