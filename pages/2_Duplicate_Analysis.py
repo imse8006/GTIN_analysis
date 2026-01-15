@@ -24,7 +24,7 @@ st.markdown("""
     .main-header {
         font-size: 3rem;
         font-weight: 700;
-        color: #60a5fa;
+        color: #94a3b8;
         text-align: center;
         margin-bottom: 1rem;
         padding: 1rem 0;
@@ -33,11 +33,11 @@ st.markdown("""
     .section-header {
         font-size: 1.5rem;
         font-weight: 600;
-        color: #60a5fa;
+        color: #94a3b8;
         margin-top: 2rem;
         margin-bottom: 1rem;
         padding-bottom: 0.5rem;
-        border-bottom: 2px solid #60a5fa;
+        border-bottom: 2px solid #475569;
     }
     .stMetric {
         background-color: #1e293b;
@@ -205,7 +205,7 @@ def check_password():
     
     if "password_correct" not in st.session_state:
         st.markdown('<div style="text-align: center; padding: 2rem;">', unsafe_allow_html=True)
-        st.markdown('<div style="color: #60a5fa; font-size: 2.5rem; font-weight: 700; margin-bottom: 0.5rem;">GTIN Duplicate Analysis</div>', unsafe_allow_html=True)
+        st.markdown('<div style="color: #94a3b8; font-size: 2.5rem; font-weight: 700; margin-bottom: 0.5rem;">GTIN Duplicate Analysis</div>', unsafe_allow_html=True)
         password = st.text_input("Password", type="password", on_change=password_entered, key="password", label_visibility="visible")
         if "password" in st.session_state and st.session_state.get("password_correct", None) == False:
             st.error("Incorrect password")
@@ -226,7 +226,7 @@ def main():
     
     # Header
     st.markdown('<h1 class="main-header">🔍 GTIN Duplicate Analysis</h1>', unsafe_allow_html=True)
-    st.markdown(f'<div style="text-align: center; color: #cbd5e1; margin-bottom: 0.5rem;">📁 Source file: <strong style="color: #60a5fa;">{INPUT_FILE}</strong></div>', unsafe_allow_html=True)
+    st.markdown(f'<div style="text-align: center; color: #cbd5e1; margin-bottom: 0.5rem;">📁 Source file: <strong style="color: #94a3b8;">{INPUT_FILE}</strong></div>', unsafe_allow_html=True)
     
     # Save Analysis button - positioned right after source file with improved design
     col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 2])
@@ -424,7 +424,7 @@ def main():
     st.markdown(
         f"<div style='text-align: center; color: #cbd5e1; padding: 1rem;'>"
         f"📅 Analysis generated on {date.today().strftime('%B %d, %Y')} | "
-        f"Total: <strong style='color: #60a5fa;'>{total_rows:,}</strong> products analyzed"
+        f"Total: <strong style='color: #94a3b8;'>{total_rows:,}</strong> products analyzed"
         f"</div>",
         unsafe_allow_html=True
     )
