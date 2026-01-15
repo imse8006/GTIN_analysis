@@ -434,7 +434,7 @@ def main():
     if "selected_entities" not in st.session_state:
         st.session_state.selected_entities = legal_entities
     
-    col1, col2, col3 = st.columns([3, 1, 1])
+    col1, col2 = st.columns([4, 1])
     with col1:
         selected_entities = st.multiselect(
             "**Select Legal Entities**",
@@ -446,13 +446,10 @@ def main():
         st.session_state.selected_entities = selected_entities
     
     with col2:
-        st.markdown("<br>", unsafe_allow_html=True)  # Spacing
+        # Stack buttons vertically
         if st.button("🔄 Reset to All", use_container_width=True):
             st.session_state.selected_entities = legal_entities
             st.rerun()
-    
-    with col3:
-        st.markdown("<br>", unsafe_allow_html=True)  # Spacing
         if st.button("Reset", use_container_width=True):
             st.session_state.selected_entities = []
             st.rerun()
