@@ -166,6 +166,10 @@ st.markdown("""
     div[data-testid="stTextInput"] {
         width: 100% !important;
     }
+    /* Align Reset buttons with multiselect field */
+    div[data-testid="column"]:has(button:contains("Reset")) {
+        padding-top: 1.5rem !important;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -412,8 +416,6 @@ def main():
         if st.button("💾 Save Analysis and Report to Tracker", use_container_width=True, type="primary", key="save_quality_analysis_top"):
             st.session_state["save_quality_requested"] = True
     
-    st.markdown("<br>", unsafe_allow_html=True)  # Spacing
-    
     # Load data
     with st.spinner("Loading and analyzing data..."):
         result = load_and_classify_data()
@@ -446,13 +448,15 @@ def main():
         st.session_state.selected_entities = selected_entities
     
     with col2:
-        # Stack buttons vertically
+        # Stack buttons vertically, aligned with multiselect
+        st.markdown('<div style="padding-top: 1.5rem;">', unsafe_allow_html=True)
         if st.button("🔄 Reset to All", use_container_width=True):
             st.session_state.selected_entities = legal_entities
             st.rerun()
         if st.button("Reset", use_container_width=True):
             st.session_state.selected_entities = []
             st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
     
     st.markdown('</div>', unsafe_allow_html=True)
     

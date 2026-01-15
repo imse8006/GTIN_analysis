@@ -240,8 +240,6 @@ def main():
         if save_button_clicked:
             st.session_state["save_duplicate_requested"] = True
     
-    st.markdown("<br>", unsafe_allow_html=True)  # Spacing
-    
     # Load data
     with st.spinner("Loading data and analyzing duplicates..."):
         result = load_duplicate_data()
