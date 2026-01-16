@@ -193,29 +193,44 @@ def load_duplicate_data():
     if gtin_inner_col is None:
         st.warning("GTIN-Inner column not found! Only Outer duplicates will be analyzed.")
     
-    # Normalize GTINs: prioritize Generic GTIN column if both exist and Generic GTIN is filled
-    # Otherwise use GTIN Outer
+    # Normalize GTINs with priority logic:
+    # 1. If only GTIN-Outer is filled → use GTIN-Outer
+    # 2. If only Generic GTIN is filled → use Generic GTIN
+    # 3. If both are filled → use GTIN-Outer (priority to GTIN-Outer when both exist)
     def get_gtin_outer_normalized(row):
-        if generic_gtin_col and pd.notna(row.get(generic_gtin_col)) and str(row.get(generic_gtin_col)).strip() not in ["", "nan"]:
-            # Use Generic GTIN if it exists and is not empty
-            return normalize_gtin(row[generic_gtin_col])
-        elif gtin_outer_col and pd.notna(row.get(gtin_outer_col)) and str(row.get(gtin_outer_col)).strip() not in ["", "nan"]:
-            # Otherwise use GTIN Outer
+        has_outer = gtin_outer_col and pd.notna(row.get(gtin_outer_col)) and str(row.get(gtin_outer_col)).strip() not in ["", "nan"]
+        has_generic = generic_gtin_col and pd.notna(row.get(generic_gtin_col)) and str(row.get(generic_gtin_col)).strip() not in ["", "nan"]
+        
+        if has_outer and has_generic:
+            # Both filled → use GTIN-Outer (priority)
             return normalize_gtin(row[gtin_outer_col])
+        elif has_outer:
+            # Only GTIN-Outer filled → use GTIN-Outer
+            return normalize_gtin(row[gtin_outer_col])
+        elif has_generic:
+            # Only Generic GTIN filled → use Generic GTIN
+            return normalize_gtin(row[generic_gtin_col])
         else:
+            # Neither filled
             return None
     
     df["gtin_outer_normalized"] = df.apply(get_gtin_outer_normalized, axis=1)
     
     # Store which column was used for reference
-    if generic_gtin_col:
-        df["gtin_source"] = df.apply(
-            lambda row: "Generic GTIN" if (pd.notna(row.get(generic_gtin_col)) and str(row.get(generic_gtin_col)).strip() not in ["", "nan"]) 
-            else ("GTIN Outer" if (pd.notna(row.get(gtin_outer_col)) and str(row.get(gtin_outer_col)).strip() not in ["", "nan"]) else "None"),
-            axis=1
-        )
-    else:
-        df["gtin_source"] = "GTIN Outer"
+    def get_gtin_source(row):
+        has_outer = gtin_outer_col and pd.notna(row.get(gtin_outer_col)) and str(row.get(gtin_outer_col)).strip() not in ["", "nan"]
+        has_generic = generic_gtin_col and pd.notna(row.get(generic_gtin_col)) and str(row.get(generic_gtin_col)).strip() not in ["", "nan"]
+        
+        if has_outer and has_generic:
+            return "GTIN Outer (both filled)"
+        elif has_outer:
+            return "GTIN Outer"
+        elif has_generic:
+            return "Generic GTIN"
+        else:
+            return "None"
+    
+    df["gtin_source"] = df.apply(get_gtin_source, axis=1)
     
     if gtin_inner_col:
         df["gtin_inner_normalized"] = df[gtin_inner_col].apply(normalize_gtin)
