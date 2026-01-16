@@ -4,11 +4,71 @@ import plotly.express as px
 from pathlib import Path
 from datetime import date
 import io
+from collections import Counter
 
 # Import shared functions and constants
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
+
+# Import GTIN classification functions
+try:
+    from gtin_analysis import (
+        GENERIC_GTINS, 
+        EXPLICIT_BLOCKED, 
+        VALID_LENGTHS,
+        has_valid_gs1_check_digit,
+        classify_gtin_status
+    )
+except ImportError:
+    # Fallback definitions if import fails
+    GENERIC_GTINS = {
+        "10000000000009", "20000000000009", "30000000000009", "40000000000009",
+        "50000000000009", "60000000000009", "70000000000009", "80000000000009",
+    }
+    EXPLICIT_BLOCKED = "99999999999999"
+    VALID_LENGTHS = {8, 13, 14}
+    
+    def has_valid_gs1_check_digit(gtin, length):
+        if length == 8:
+            return True
+        if length not in (13, 14) or not gtin.isdigit():
+            return False
+        digits = [int(d) for d in gtin]
+        body, check_digit = digits[:-1], digits[-1]
+        total = 0
+        for i, d in enumerate(reversed(body), start=1):
+            if length == 13:
+                multiplier = 1 if i % 2 == 1 else 3
+            else:
+                multiplier = 3 if i % 2 == 1 else 1
+            total += d * multiplier
+        calc = (10 - (total % 10)) % 10
+        return calc == check_digit
+    
+    def classify_gtin_status(gtin_raw):
+        if pd.isna(gtin_raw) or gtin_raw is None:
+            return "MISSING"
+        gtin = normalize_gtin(gtin_raw)
+        if gtin is None:
+            return "MISSING"
+        if gtin == EXPLICIT_BLOCKED:
+            return "EXPLICIT_BLOCKED"
+        if gtin in GENERIC_GTINS:
+            return "GENERIC_GTIN"
+        if not gtin.isdigit():
+            return "NON_NUMERIC"
+        length = len(gtin)
+        if length not in VALID_LENGTHS:
+            return "INVALID_LENGTH"
+        if not has_valid_gs1_check_digit(gtin, length):
+            return "SUSPECT"
+        if length == 8:
+            return "GTIN_8"
+        elif length == 13:
+            return "GTIN_13"
+        else:
+            return "GTIN_14"
 
 # Page configuration
 st.set_page_config(
@@ -135,6 +195,26 @@ def load_duplicate_data():
     return df, gtin_outer_col, gtin_inner_col
 
 
+def is_suspect_gtin(gtin):
+    """Detect suspect GTINs where a digit repeats many times (e.g., 18414900000000)."""
+    if pd.isna(gtin) or gtin is None:
+        return False
+    gtin_str = normalize_gtin(gtin)
+    if not gtin_str or not gtin_str.isdigit():
+        return False
+    
+    # Check if any digit appears more than 60% of the length
+    digit_counts = Counter(gtin_str)
+    max_count = max(digit_counts.values())
+    threshold = len(gtin_str) * 0.6
+    
+    # Also check for patterns like many zeros at the end
+    if gtin_str.endswith("0" * max(6, len(gtin_str) // 2)):
+        return True
+    
+    return max_count >= threshold
+
+
 def analyze_duplicates(df, gtin_outer_col, gtin_inner_col):
     """Analyze duplicates in GTIN Outer and Inner."""
     results = {}
@@ -186,6 +266,135 @@ def analyze_duplicates(df, gtin_outer_col, gtin_inner_col):
         results["cross"] = None
     
     return results
+
+
+def analyze_generic_gtins(df, gtin_outer_col):
+    """Analyze Generic GTINs and their distribution by Legal Entity."""
+    # Classify GTINs
+    df["gtin_status"] = df[gtin_outer_col].apply(classify_gtin_status)
+    
+    # Filter Generic GTINs
+    generic_df = df[df["gtin_status"] == "GENERIC_GTIN"].copy()
+    
+    if len(generic_df) == 0:
+        return {
+            "total": 0,
+            "unique_gtins": 0,
+            "by_entity": pd.DataFrame(),
+            "gtin_list": []
+        }
+    
+    # Analysis by Legal Entity
+    by_entity = generic_df.groupby("Legal Entity").agg({
+        gtin_outer_col: "count",
+        "gtin_outer_normalized": "nunique"
+    }).reset_index()
+    by_entity.columns = ["Legal Entity", "Total Records", "Unique Generic GTINs"]
+    by_entity = by_entity.sort_values("Total Records", ascending=False)
+    
+    unique_generics = generic_df["gtin_outer_normalized"].unique().tolist()
+    
+    return {
+        "total": len(generic_df),
+        "unique_gtins": len(unique_generics),
+        "by_entity": by_entity,
+        "gtin_list": unique_generics,
+        "full_df": generic_df
+    }
+
+
+def analyze_suspect_gtins(df, gtin_outer_col):
+    """Analyze Suspect GTINs (e.g., 18414900000000) and their distribution."""
+    # Detect suspect GTINs
+    df["is_suspect"] = df[gtin_outer_col].apply(is_suspect_gtin)
+    suspect_df = df[df["is_suspect"] == True].copy()
+    
+    if len(suspect_df) == 0:
+        return {
+            "total": 0,
+            "unique_gtins": 0,
+            "by_entity": pd.DataFrame(),
+            "gtin_list": []
+        }
+    
+    # Analysis by Legal Entity
+    by_entity = suspect_df.groupby("Legal Entity").agg({
+        gtin_outer_col: "count",
+        "gtin_outer_normalized": "nunique"
+    }).reset_index()
+    by_entity.columns = ["Legal Entity", "Total Records", "Unique Suspect GTINs"]
+    by_entity = by_entity.sort_values("Total Records", ascending=False)
+    
+    unique_suspects = suspect_df["gtin_outer_normalized"].unique().tolist()
+    
+    return {
+        "total": len(suspect_df),
+        "unique_gtins": len(unique_suspects),
+        "by_entity": by_entity,
+        "gtin_list": unique_suspects,
+        "full_df": suspect_df
+    }
+
+
+def analyze_valid_gtins_by_entity(df, gtin_outer_col):
+    """Analyze valid GTINs and understand which Legal Entities share them."""
+    # Classify GTINs
+    df["gtin_status"] = df[gtin_outer_col].apply(classify_gtin_status)
+    
+    # Filter valid GTINs (8, 13, 14 digits with valid check digit)
+    valid_statuses = ["GTIN_8", "GTIN_13", "GTIN_14"]
+    valid_df = df[df["gtin_status"].isin(valid_statuses)].copy()
+    
+    if len(valid_df) == 0:
+        return {
+            "total": 0,
+            "unique_gtins": 0,
+            "shared_gtins": pd.DataFrame(),
+            "entity_sharing": pd.DataFrame()
+        }
+    
+    # Find GTINs shared across multiple Legal Entities
+    gtin_entity_counts = valid_df.groupby("gtin_outer_normalized")["Legal Entity"].nunique().reset_index()
+    gtin_entity_counts.columns = ["GTIN", "Entity Count"]
+    shared_gtins = gtin_entity_counts[gtin_entity_counts["Entity Count"] > 1].sort_values("Entity Count", ascending=False)
+    
+    # For each shared GTIN, list which entities share it
+    sharing_details = []
+    for gtin in shared_gtins["GTIN"].head(100):  # Limit to top 100 for performance
+        entities = valid_df[valid_df["gtin_outer_normalized"] == gtin]["Legal Entity"].unique().tolist()
+        sharing_details.append({
+            "GTIN": gtin,
+            "Entity Count": len(entities),
+            "Legal Entities": ", ".join(sorted(entities))
+        })
+    
+    sharing_df = pd.DataFrame(sharing_details) if sharing_details else pd.DataFrame()
+    
+    # Entity-to-Entity sharing matrix (simplified - count of shared GTINs)
+    entity_list = sorted(valid_df["Legal Entity"].unique())
+    entity_sharing = []
+    for i, entity1 in enumerate(entity_list):
+        for entity2 in entity_list[i+1:]:
+            gtins1 = set(valid_df[valid_df["Legal Entity"] == entity1]["gtin_outer_normalized"].unique())
+            gtins2 = set(valid_df[valid_df["Legal Entity"] == entity2]["gtin_outer_normalized"].unique())
+            shared_count = len(gtins1.intersection(gtins2))
+            if shared_count > 0:
+                entity_sharing.append({
+                    "Entity 1": entity1,
+                    "Entity 2": entity2,
+                    "Shared GTINs": shared_count
+                })
+    
+    entity_sharing_df = pd.DataFrame(entity_sharing).sort_values("Shared GTINs", ascending=False) if entity_sharing else pd.DataFrame()
+    
+    return {
+        "total": len(valid_df),
+        "unique_gtins": valid_df["gtin_outer_normalized"].nunique(),
+        "shared_gtins": shared_gtins,
+        "sharing_details": sharing_df,
+        "entity_sharing": entity_sharing_df,
+        "full_df": valid_df
+    }
 
 
 def check_password():
@@ -250,36 +459,51 @@ def main():
     total_rows = len(df)
     
     # Analyze duplicates
-    duplicate_results = analyze_duplicates(df, gtin_outer_col, gtin_inner_col)
+    with st.spinner("Analyzing duplicates..."):
+        duplicate_results = analyze_duplicates(df, gtin_outer_col, gtin_inner_col)
+    
+    # Analyze Generic, Suspect, and Valid GTINs
+    with st.spinner("Analyzing Generic GTINs..."):
+        generic_results = analyze_generic_gtins(df, gtin_outer_col)
+    
+    with st.spinner("Analyzing Suspect GTINs..."):
+        suspect_results = analyze_suspect_gtins(df, gtin_outer_col)
+    
+    with st.spinner("Analyzing Valid GTINs by Legal Entity..."):
+        valid_results = analyze_valid_gtins_by_entity(df, gtin_outer_col)
     
     # Overview Metrics
     st.markdown('<div class="section-header">📊 Overview</div>', unsafe_allow_html=True)
     
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
     
     with col1:
         st.metric("📦 Total Products", f"{total_rows:,}")
     
     with col2:
         outer_dup = duplicate_results["outer"]["total_duplicates"]
-        st.metric("🔄 GTIN Outer Duplicates", f"{outer_dup:,}", 
+        st.metric("🔄 Outer Duplicates", f"{outer_dup:,}", 
                  f"{outer_dup/total_rows*100:.1f}%" if total_rows > 0 else "0%")
     
     with col3:
-        if duplicate_results["inner"]:
-            inner_dup = duplicate_results["inner"]["total_duplicates"]
-            st.metric("🔄 GTIN Inner Duplicates", f"{inner_dup:,}",
-                     f"{inner_dup/total_rows*100:.1f}%" if total_rows > 0 else "0%")
-        else:
-            st.metric("🔄 GTIN Inner Duplicates", "N/A", "Column not found")
-    
-    with col4:
         if duplicate_results["cross"]:
             cross_dup = duplicate_results["cross"]["unique_cross_gtins"]
             st.metric("🔀 Cross Duplicates", f"{cross_dup:,}",
                      f"{duplicate_results['cross']['total_records']:,} records")
         else:
             st.metric("🔀 Cross Duplicates", "N/A", "Inner column not found")
+    
+    with col4:
+        st.metric("⚠️ Generic GTINs", f"{generic_results['total']:,}", 
+                 f"{generic_results['unique_gtins']:,} unique")
+    
+    with col5:
+        st.metric("🔍 Suspect GTINs", f"{suspect_results['total']:,}",
+                 f"{suspect_results['unique_gtins']:,} unique")
+    
+    with col6:
+        st.metric("✅ Valid GTINs", f"{valid_results['total']:,}",
+                 f"{valid_results['unique_gtins']:,} unique")
     
     # Handle save button click (button is at the top, but logic is here after data is loaded)
     if st.session_state.get("save_duplicate_requested", False):
@@ -310,73 +534,19 @@ def main():
     # Detailed Analysis
     st.markdown('<div class="section-header">📋 Detailed Analysis</div>', unsafe_allow_html=True)
     
-    # Tabs for different duplicate types
-    tab1, tab2, tab3 = st.tabs(["GTIN Outer Duplicates", "GTIN Inner Duplicates", "Cross Duplicates"])
+    # Tabs for different analysis types
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+        "🔄 Cross Duplicates", 
+        "📦 GTIN Outer Duplicates", 
+        "📦 GTIN Inner Duplicates",
+        "⚠️ Generic GTINs",
+        "🔍 Suspect GTINs",
+        "✅ Valid GTINs by Entity"
+    ])
     
+    # Tab 1: Cross Duplicates (moved to first position as it's most interesting)
     with tab1:
-        st.markdown("#### GTIN Outer Duplicates")
-        outer_df = duplicate_results["outer"]["duplicate_df"]
-        
-        if len(outer_df) > 0:
-            # Summary by GTIN
-            outer_summary = outer_df.groupby("gtin_outer_normalized").agg({
-                "Legal Entity": "count",
-                "SUPC": lambda x: ", ".join(x.dropna().astype(str).unique()[:5]) if "SUPC" in outer_df.columns else "N/A"
-            }).reset_index()
-            outer_summary.columns = ["GTIN Outer", "Duplicate Count", "Sample SUPCs"]
-            outer_summary = outer_summary.sort_values("Duplicate Count", ascending=False)
-            
-            st.markdown(f"**Found {duplicate_results['outer']['unique_duplicated_gtins']} unique GTINs with duplicates**")
-            st.dataframe(outer_summary, use_container_width=True, hide_index=True)
-            
-            # Detailed view
-            with st.expander("View All Duplicate Records"):
-                display_cols = ["Legal Entity", gtin_outer_col, "gtin_outer_normalized"]
-                if "SUPC" in outer_df.columns:
-                    display_cols.append("SUPC")
-                if "Local Product Description" in outer_df.columns:
-                    display_cols.append("Local Product Description")
-                
-                available_cols = [col for col in display_cols if col in outer_df.columns]
-                st.dataframe(outer_df[available_cols], use_container_width=True, hide_index=True)
-        else:
-            st.success("✅ No duplicates found in GTIN Outer!")
-    
-    with tab2:
-        st.markdown("#### GTIN Inner Duplicates")
-        
-        if duplicate_results["inner"]:
-            inner_df = duplicate_results["inner"]["duplicate_df"]
-            
-            if len(inner_df) > 0:
-                # Summary by GTIN
-                inner_summary = inner_df.groupby("gtin_inner_normalized").agg({
-                    "Legal Entity": "count",
-                    "SUPC": lambda x: ", ".join(x.dropna().astype(str).unique()[:5]) if "SUPC" in inner_df.columns else "N/A"
-                }).reset_index()
-                inner_summary.columns = ["GTIN Inner", "Duplicate Count", "Sample SUPCs"]
-                inner_summary = inner_summary.sort_values("Duplicate Count", ascending=False)
-                
-                st.markdown(f"**Found {duplicate_results['inner']['unique_duplicated_gtins']} unique GTINs with duplicates**")
-                st.dataframe(inner_summary, use_container_width=True, hide_index=True)
-                
-                # Detailed view
-                with st.expander("View All Duplicate Records"):
-                    display_cols = ["Legal Entity", gtin_inner_col, "gtin_inner_normalized"]
-                    if "SUPC" in inner_df.columns:
-                        display_cols.append("SUPC")
-                    if "Local Product Description" in inner_df.columns:
-                        display_cols.append("Local Product Description")
-                    
-                    available_cols = [col for col in display_cols if col in inner_df.columns]
-                    st.dataframe(inner_df[available_cols], use_container_width=True, hide_index=True)
-            else:
-                st.success("✅ No duplicates found in GTIN Inner!")
-        else:
-            st.info("ℹ️ GTIN Inner column not found in the data file.")
-    
-    with tab3:
-        st.markdown("#### Cross Duplicates (GTIN appears in both Outer and Inner)")
+        st.markdown("#### 🔀 Cross Duplicates (GTIN appears in both Outer and Inner)")
         
         if duplicate_results["cross"]:
             cross_df = duplicate_results["cross"]["cross_df"]
@@ -384,16 +554,31 @@ def main():
             if len(cross_df) > 0:
                 st.markdown(f"**Found {duplicate_results['cross']['unique_cross_gtins']} GTINs that appear in both Outer and Inner columns**")
                 
-                # Summary
+                # Analysis by Legal Entity
+                st.markdown("##### 📊 By Legal Entity")
+                cross_by_entity = cross_df.groupby("Legal Entity").agg({
+                    gtin_outer_col: "count" if gtin_outer_col else "size",
+                    "gtin_outer_normalized": "nunique"
+                }).reset_index()
+                cross_by_entity.columns = ["Legal Entity", "Total Records", "Unique Cross GTINs"]
+                cross_by_entity = cross_by_entity.sort_values("Total Records", ascending=False)
+                st.dataframe(cross_by_entity, use_container_width=True, hide_index=True)
+                
+                # Summary by GTIN
+                st.markdown("##### 📋 GTIN Summary")
                 cross_summary = []
-                for gtin in duplicate_results["cross"]["gtin_list"][:50]:  # Limit to first 50
-                    outer_count = len(cross_df[cross_df["gtin_outer_normalized"] == gtin])
-                    inner_count = len(cross_df[cross_df["gtin_inner_normalized"] == gtin])
+                for gtin in duplicate_results["cross"]["gtin_list"][:100]:  # Limit to first 100
+                    gtin_df = cross_df[(cross_df["gtin_outer_normalized"] == gtin) | 
+                                      (cross_df["gtin_inner_normalized"] == gtin)]
+                    outer_count = len(gtin_df[gtin_df["gtin_outer_normalized"] == gtin])
+                    inner_count = len(gtin_df[gtin_df["gtin_inner_normalized"] == gtin])
+                    entities = gtin_df["Legal Entity"].unique().tolist()
                     cross_summary.append({
                         "GTIN": gtin,
                         "As Outer": outer_count,
                         "As Inner": inner_count,
-                        "Total Records": outer_count + inner_count
+                        "Total Records": outer_count + inner_count,
+                        "Legal Entities": ", ".join(sorted(entities))
                     })
                 
                 if cross_summary:
@@ -416,6 +601,246 @@ def main():
                 st.success("✅ No cross duplicates found!")
         else:
             st.info("ℹ️ GTIN Inner column not found. Cross duplicate analysis requires both Outer and Inner columns.")
+    
+    # Tab 2: GTIN Outer Duplicates
+    with tab2:
+        st.markdown("#### 📦 GTIN Outer Duplicates")
+        outer_df = duplicate_results["outer"]["duplicate_df"]
+        
+        if len(outer_df) > 0:
+            # Analysis by Legal Entity
+            st.markdown("##### 📊 By Legal Entity")
+            outer_by_entity = outer_df.groupby("Legal Entity").agg({
+                gtin_outer_col: "count",
+                "gtin_outer_normalized": "nunique"
+            }).reset_index()
+            outer_by_entity.columns = ["Legal Entity", "Total Duplicates", "Unique Duplicated GTINs"]
+            outer_by_entity = outer_by_entity.sort_values("Total Duplicates", ascending=False)
+            st.dataframe(outer_by_entity, use_container_width=True, hide_index=True)
+            
+            # Summary by GTIN
+            st.markdown("##### 📋 GTIN Summary")
+            outer_summary = outer_df.groupby("gtin_outer_normalized").agg({
+                "Legal Entity": lambda x: ", ".join(sorted(x.unique()))
+            }).reset_index()
+            outer_summary["Duplicate Count"] = outer_df.groupby("gtin_outer_normalized").size().values
+            outer_summary.columns = ["GTIN Outer", "Legal Entities", "Duplicate Count"]
+            outer_summary = outer_summary.sort_values("Duplicate Count", ascending=False)
+            
+            st.markdown(f"**Found {duplicate_results['outer']['unique_duplicated_gtins']} unique GTINs with duplicates**")
+            st.dataframe(outer_summary, use_container_width=True, hide_index=True)
+            
+            # Detailed view
+            with st.expander("View All Duplicate Records"):
+                display_cols = ["Legal Entity", gtin_outer_col, "gtin_outer_normalized"]
+                if "SUPC" in outer_df.columns:
+                    display_cols.append("SUPC")
+                if "Local Product Description" in outer_df.columns:
+                    display_cols.append("Local Product Description")
+                
+                available_cols = [col for col in display_cols if col in outer_df.columns]
+                st.dataframe(outer_df[available_cols], use_container_width=True, hide_index=True)
+        else:
+            st.success("✅ No duplicates found in GTIN Outer!")
+    
+    # Tab 3: GTIN Inner Duplicates
+    with tab3:
+        st.markdown("#### 📦 GTIN Inner Duplicates")
+        
+        if duplicate_results["inner"]:
+            inner_df = duplicate_results["inner"]["duplicate_df"]
+            
+            if len(inner_df) > 0:
+                # Analysis by Legal Entity
+                st.markdown("##### 📊 By Legal Entity")
+                inner_by_entity = inner_df.groupby("Legal Entity").agg({
+                    gtin_inner_col: "count",
+                    "gtin_inner_normalized": "nunique"
+                }).reset_index()
+                inner_by_entity.columns = ["Legal Entity", "Total Duplicates", "Unique Duplicated GTINs"]
+                inner_by_entity = inner_by_entity.sort_values("Total Duplicates", ascending=False)
+                st.dataframe(inner_by_entity, use_container_width=True, hide_index=True)
+                
+                # Summary by GTIN
+                st.markdown("##### 📋 GTIN Summary")
+                inner_summary = inner_df.groupby("gtin_inner_normalized").agg({
+                    "Legal Entity": lambda x: ", ".join(sorted(x.unique()))
+                }).reset_index()
+                inner_summary["Duplicate Count"] = inner_df.groupby("gtin_inner_normalized").size().values
+                inner_summary.columns = ["GTIN Inner", "Legal Entities", "Duplicate Count"]
+                inner_summary = inner_summary.sort_values("Duplicate Count", ascending=False)
+                
+                st.markdown(f"**Found {duplicate_results['inner']['unique_duplicated_gtins']} unique GTINs with duplicates**")
+                st.dataframe(inner_summary, use_container_width=True, hide_index=True)
+                
+                # Detailed view
+                with st.expander("View All Duplicate Records"):
+                    display_cols = ["Legal Entity", gtin_inner_col, "gtin_inner_normalized"]
+                    if "SUPC" in inner_df.columns:
+                        display_cols.append("SUPC")
+                    if "Local Product Description" in inner_df.columns:
+                        display_cols.append("Local Product Description")
+                    
+                    available_cols = [col for col in display_cols if col in inner_df.columns]
+                    st.dataframe(inner_df[available_cols], use_container_width=True, hide_index=True)
+            else:
+                st.success("✅ No duplicates found in GTIN Inner!")
+        else:
+            st.info("ℹ️ GTIN Inner column not found in the data file.")
+    
+    # Tab 4: Generic GTINs
+    with tab4:
+        st.markdown("#### ⚠️ Generic GTINs Analysis")
+        
+        if generic_results["total"] > 0:
+            st.markdown(f"**Found {generic_results['total']:,} records with {generic_results['unique_gtins']:,} unique Generic GTINs**")
+            
+            # By Legal Entity
+            st.markdown("##### 📊 Distribution by Legal Entity")
+            if len(generic_results["by_entity"]) > 0:
+                st.dataframe(generic_results["by_entity"], use_container_width=True, hide_index=True)
+                
+                # Chart
+                fig_generic = px.bar(
+                    generic_results["by_entity"],
+                    x="Legal Entity",
+                    y="Total Records",
+                    title="Generic GTINs by Legal Entity",
+                    labels={"Total Records": "Number of Records", "Legal Entity": "Legal Entity"}
+                )
+                fig_generic.update_layout(template='plotly_dark', height=400)
+                st.plotly_chart(fig_generic, use_container_width=True)
+            
+            # List of Generic GTINs
+            st.markdown("##### 📋 Generic GTINs List")
+            generic_list_df = pd.DataFrame({"Generic GTIN": generic_results["gtin_list"]})
+            st.dataframe(generic_list_df, use_container_width=True, hide_index=True)
+            
+            # Detailed view
+            with st.expander("View All Generic GTIN Records"):
+                display_cols = ["Legal Entity", gtin_outer_col, "gtin_outer_normalized"]
+                if "SUPC" in generic_results["full_df"].columns:
+                    display_cols.append("SUPC")
+                if "Local Product Description" in generic_results["full_df"].columns:
+                    display_cols.append("Local Product Description")
+                
+                available_cols = [col for col in display_cols if col in generic_results["full_df"].columns]
+                st.dataframe(generic_results["full_df"][available_cols], use_container_width=True, hide_index=True)
+        else:
+            st.success("✅ No Generic GTINs found!")
+    
+    # Tab 5: Suspect GTINs
+    with tab5:
+        st.markdown("#### 🔍 Suspect GTINs Analysis")
+        st.markdown("*GTINs with suspicious patterns (e.g., repeated digits like 18414900000000)*")
+        
+        if suspect_results["total"] > 0:
+            st.markdown(f"**Found {suspect_results['total']:,} records with {suspect_results['unique_gtins']:,} unique Suspect GTINs**")
+            
+            # By Legal Entity
+            st.markdown("##### 📊 Distribution by Legal Entity")
+            if len(suspect_results["by_entity"]) > 0:
+                st.dataframe(suspect_results["by_entity"], use_container_width=True, hide_index=True)
+                
+                # Chart
+                fig_suspect = px.bar(
+                    suspect_results["by_entity"],
+                    x="Legal Entity",
+                    y="Total Records",
+                    title="Suspect GTINs by Legal Entity",
+                    labels={"Total Records": "Number of Records", "Legal Entity": "Legal Entity"}
+                )
+                fig_suspect.update_layout(template='plotly_dark', height=400)
+                st.plotly_chart(fig_suspect, use_container_width=True)
+            
+            # Sample Suspect GTINs
+            st.markdown("##### 📋 Sample Suspect GTINs")
+            suspect_list_df = pd.DataFrame({"Suspect GTIN": suspect_results["gtin_list"][:50]})
+            st.dataframe(suspect_list_df, use_container_width=True, hide_index=True)
+            
+            # Detailed view
+            with st.expander("View All Suspect GTIN Records"):
+                display_cols = ["Legal Entity", gtin_outer_col, "gtin_outer_normalized"]
+                if "SUPC" in suspect_results["full_df"].columns:
+                    display_cols.append("SUPC")
+                if "Local Product Description" in suspect_results["full_df"].columns:
+                    display_cols.append("Local Product Description")
+                
+                available_cols = [col for col in display_cols if col in suspect_results["full_df"].columns]
+                st.dataframe(suspect_results["full_df"][available_cols], use_container_width=True, hide_index=True)
+        else:
+            st.success("✅ No Suspect GTINs found!")
+    
+    # Tab 6: Valid GTINs by Entity
+    with tab6:
+        st.markdown("#### ✅ Valid GTINs - Sharing Analysis by Legal Entity")
+        
+        if valid_results["total"] > 0:
+            st.markdown(f"**Found {valid_results['total']:,} records with {valid_results['unique_gtins']:,} unique Valid GTINs**")
+            
+            # Shared GTINs
+            st.markdown("##### 🔗 GTINs Shared Across Multiple Legal Entities")
+            if len(valid_results["shared_gtins"]) > 0:
+                st.markdown(f"**{len(valid_results['shared_gtins'])} GTINs are shared across multiple entities**")
+                st.dataframe(valid_results["shared_gtins"].head(50), use_container_width=True, hide_index=True)
+                
+                # Chart: Distribution of sharing
+                sharing_dist = valid_results["shared_gtins"]["Entity Count"].value_counts().sort_index()
+                fig_sharing = px.bar(
+                    x=sharing_dist.index,
+                    y=sharing_dist.values,
+                    title="Distribution: How Many Entities Share GTINs",
+                    labels={"x": "Number of Entities", "y": "Number of GTINs"}
+                )
+                fig_sharing.update_layout(template='plotly_dark', height=400)
+                st.plotly_chart(fig_sharing, use_container_width=True)
+            
+            # Entity-to-Entity Sharing
+            st.markdown("##### 🤝 Entity-to-Entity GTIN Sharing")
+            if len(valid_results["entity_sharing"]) > 0:
+                st.markdown("**Top Entity Pairs Sharing GTINs:**")
+                st.dataframe(valid_results["entity_sharing"].head(30), use_container_width=True, hide_index=True)
+                
+                # Heatmap visualization (if not too many entities)
+                if len(valid_results["entity_sharing"]) > 0 and len(valid_results["entity_sharing"]) < 200:
+                    # Create a matrix for heatmap
+                    entities = sorted(set(valid_results["entity_sharing"]["Entity 1"].tolist() + 
+                                         valid_results["entity_sharing"]["Entity 2"].tolist()))
+                    if len(entities) <= 20:  # Only show heatmap if reasonable number of entities
+                        sharing_matrix = pd.DataFrame(0, index=entities, columns=entities)
+                        for _, row in valid_results["entity_sharing"].iterrows():
+                            sharing_matrix.loc[row["Entity 1"], row["Entity 2"]] = row["Shared GTINs"]
+                            sharing_matrix.loc[row["Entity 2"], row["Entity 1"]] = row["Shared GTINs"]
+                        
+                        fig_heatmap = px.imshow(
+                            sharing_matrix.values,
+                            labels=dict(x="Legal Entity", y="Legal Entity", color="Shared GTINs"),
+                            x=entities,
+                            y=entities,
+                            title="GTIN Sharing Heatmap Between Legal Entities",
+                            color_continuous_scale="Blues"
+                        )
+                        fig_heatmap.update_layout(template='plotly_dark', height=600)
+                        st.plotly_chart(fig_heatmap, use_container_width=True)
+            
+            # Detailed sharing information
+            st.markdown("##### 📋 Detailed GTIN Sharing Information")
+            if len(valid_results["sharing_details"]) > 0:
+                st.dataframe(valid_results["sharing_details"].head(100), use_container_width=True, hide_index=True)
+            
+            # Summary statistics
+            st.markdown("##### 📊 Summary Statistics")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Valid GTINs", f"{valid_results['unique_gtins']:,}")
+            with col2:
+                shared_count = len(valid_results["shared_gtins"])
+                st.metric("Shared GTINs", f"{shared_count:,}", 
+                         f"{shared_count/valid_results['unique_gtins']*100:.1f}%" if valid_results['unique_gtins'] > 0 else "0%")
+            with col3:
+                st.metric("Entity Pairs Sharing", f"{len(valid_results['entity_sharing']):,}")
+        else:
+            st.info("ℹ️ No valid GTINs found in the data.")
     
     # Footer
     st.markdown("---")
