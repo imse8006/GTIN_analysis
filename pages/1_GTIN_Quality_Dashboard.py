@@ -40,7 +40,7 @@ else:
 
 # Page configuration
 st.set_page_config(
-    page_title="GTIN Quality Dashboard - MDM Analysis",
+    page_title="GTIN Quality Dashboard",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"  # Expanded to show navigation
@@ -425,7 +425,7 @@ def main():
         st.stop()
     
     # Header
-    st.markdown('<h1 class="main-header">📊 GTIN Quality Dashboard - MDM Analysis</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">📊 GTIN Quality Dashboard</h1>', unsafe_allow_html=True)
     
     # Display source file info
     st.markdown(f'<div style="text-align: center; color: #cbd5e1; margin-bottom: 1rem;">📁 Source file: <strong style="color: #94a3b8;">{INPUT_FILE}</strong></div>', unsafe_allow_html=True)
