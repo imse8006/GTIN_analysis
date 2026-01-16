@@ -582,22 +582,66 @@ def main():
     
     total_rows = len(df)
     
-    # Analyze duplicates
-    with st.spinner("Analyzing duplicates..."):
-        duplicate_results = analyze_duplicates(df, gtin_outer_col, gtin_inner_col)
+    # Filter section by Legal Entity
+    st.markdown('<div class="filter-section">', unsafe_allow_html=True)
+    st.markdown("### 🔍 Filters")
     
-    # Analyze Generic, Suspect, Placeholder, and Valid GTINs
+    legal_entities = sorted(df["Legal Entity"].unique())
+    
+    # Initialize session state for selected entities
+    if "selected_entities_duplicate" not in st.session_state:
+        st.session_state.selected_entities_duplicate = legal_entities
+    
+    col1, col2 = st.columns([4, 1])
+    with col1:
+        selected_entities = st.multiselect(
+            "**Select Legal Entities**",
+            legal_entities,
+            default=st.session_state.selected_entities_duplicate,
+            help="Select one or more Legal Entities to analyze"
+        )
+        st.session_state.selected_entities_duplicate = selected_entities
+    
+    with col2:
+        # Stack buttons vertically, aligned with multiselect
+        st.markdown('<div style="padding-top: 1.5rem;">', unsafe_allow_html=True)
+        if st.button("🔄 Reset to All", use_container_width=True, key="reset_all_duplicate"):
+            st.session_state.selected_entities_duplicate = legal_entities
+            st.rerun()
+        if st.button("Reset", use_container_width=True, key="reset_duplicate"):
+            st.session_state.selected_entities_duplicate = []
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
+    
+    # Filter data by selected entities
+    if not selected_entities:
+        st.warning("⚠️ Please select at least one Legal Entity")
+        return
+    
+    df_filtered = df[df["Legal Entity"].isin(selected_entities)].copy()
+    
+    if len(df_filtered) == 0:
+        st.warning("⚠️ No data found for selected Legal Entities")
+        return
+    
+    # Analyze duplicates on filtered data
+    with st.spinner("Analyzing duplicates..."):
+        duplicate_results = analyze_duplicates(df_filtered, gtin_outer_col, gtin_inner_col)
+    
+    # Analyze Generic, Suspect, Placeholder, and Valid GTINs on filtered data
     with st.spinner("Analyzing Generic GTINs..."):
-        generic_results = analyze_generic_gtins(df, gtin_outer_col, generic_gtin_col)
+        generic_results = analyze_generic_gtins(df_filtered, gtin_outer_col, generic_gtin_col)
     
     with st.spinner("Analyzing Placeholder GTINs..."):
-        placeholder_results = analyze_placeholder_gtins(df, gtin_outer_col)
+        placeholder_results = analyze_placeholder_gtins(df_filtered, gtin_outer_col)
     
     with st.spinner("Analyzing Suspect GTINs..."):
-        suspect_results = analyze_suspect_gtins(df, gtin_outer_col)
+        suspect_results = analyze_suspect_gtins(df_filtered, gtin_outer_col)
     
     with st.spinner("Analyzing Valid GTINs by Legal Entity..."):
-        valid_results = analyze_valid_gtins_by_entity(df, gtin_outer_col)
+        valid_results = analyze_valid_gtins_by_entity(df_filtered, gtin_outer_col)
     
     # Overview Metrics
     st.markdown('<div class="section-header">📊 Overview</div>', unsafe_allow_html=True)
