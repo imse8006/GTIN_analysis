@@ -346,7 +346,7 @@ def analyze_duplicates(df, gtin_outer_col, gtin_inner_col):
 
 
 def analyze_generic_gtins(df, gtin_outer_col, generic_gtin_col=None):
-    """Analyze Generic GTINs and their distribution by Legal Entity."""
+    """Analyze Generic GTINs duplicates and their distribution by Legal Entity."""
     # Classify GTINs based on normalized GTIN
     df["gtin_status"] = df["gtin_outer_normalized"].apply(
         lambda x: classify_gtin_status(x) if x is not None else "MISSING"
@@ -367,24 +367,51 @@ def analyze_generic_gtins(df, gtin_outer_col, generic_gtin_col=None):
         return {
             "total": 0,
             "unique_gtins": 0,
+            "duplicate_count": 0,
+            "unique_duplicated_gtins": 0,
             "by_entity": pd.DataFrame(),
+            "duplicate_summary": pd.DataFrame(),
             "gtin_list": [],
             "full_df": pd.DataFrame()
         }
     
-    # Analysis by Legal Entity
+    # Find duplicates: Generic GTINs that appear more than once
+    generic_duplicates = generic_df[generic_df.duplicated(subset=["gtin_outer_normalized"], keep=False)].copy()
+    duplicate_count = len(generic_duplicates)
+    unique_duplicated_gtins = generic_duplicates["gtin_outer_normalized"].nunique() if duplicate_count > 0 else 0
+    
+    # Analysis by Legal Entity (for all Generic GTINs, not just duplicates)
     by_entity = generic_df.groupby("Legal Entity").agg({
         "gtin_outer_normalized": ["count", "nunique"]
     }).reset_index()
     by_entity.columns = ["Legal Entity", "Total Records", "Unique Generic GTINs"]
     by_entity = by_entity.sort_values("Total Records", ascending=False)
     
+    # Duplicate summary: which Generic GTINs are duplicated and by which entities
+    duplicate_summary = []
+    if duplicate_count > 0:
+        for gtin in generic_duplicates["gtin_outer_normalized"].unique():
+            gtin_records = generic_duplicates[generic_duplicates["gtin_outer_normalized"] == gtin]
+            entities = sorted(gtin_records["Legal Entity"].unique().tolist())
+            duplicate_summary.append({
+                "Generic GTIN": gtin,
+                "Occurrences": len(gtin_records),
+                "Legal Entities": ", ".join(entities),
+                "Entity Count": len(entities)
+            })
+        duplicate_summary_df = pd.DataFrame(duplicate_summary).sort_values("Occurrences", ascending=False)
+    else:
+        duplicate_summary_df = pd.DataFrame()
+    
     unique_generics = generic_df["gtin_outer_normalized"].dropna().unique().tolist()
     
     return {
         "total": len(generic_df),
         "unique_gtins": len(unique_generics),
+        "duplicate_count": duplicate_count,
+        "unique_duplicated_gtins": unique_duplicated_gtins,
         "by_entity": by_entity,
+        "duplicate_summary": duplicate_summary_df,
         "gtin_list": unique_generics,
         "full_df": generic_df
     }
@@ -428,17 +455,25 @@ def analyze_placeholder_gtins(df, gtin_outer_col):
 
 
 def analyze_suspect_gtins(df, gtin_outer_col):
-    """Analyze Suspect GTINs (e.g., 18414900000000) and their distribution."""
+    """Analyze Suspect GTINs (e.g., 18414900000000) and their distribution, excluding Generic GTINs."""
     # Detect suspect GTINs
     df["is_suspect"] = df[gtin_outer_col].apply(is_suspect_gtin)
-    suspect_df = df[df["is_suspect"] == True].copy()
+    
+    # Exclude Generic GTINs
+    df["gtin_status"] = df["gtin_outer_normalized"].apply(
+        lambda x: classify_gtin_status(x) if x is not None else "MISSING"
+    )
+    
+    # Filter: suspect AND not generic
+    suspect_df = df[(df["is_suspect"] == True) & (df["gtin_status"] != "GENERIC_GTIN")].copy()
     
     if len(suspect_df) == 0:
         return {
             "total": 0,
             "unique_gtins": 0,
             "by_entity": pd.DataFrame(),
-            "gtin_list": []
+            "gtin_list": [],
+            "full_df": pd.DataFrame()
         }
     
     # Analysis by Legal Entity
@@ -666,8 +701,10 @@ def main():
             st.metric("🔀 Cross Duplicates", "N/A", "Inner column not found")
     
     with col4:
-        st.metric("⚠️ Generic GTINs", f"{generic_results['total']:,}", 
-                 f"{generic_results['unique_gtins']:,} unique")
+        duplicate_count = generic_results.get('duplicate_count', 0)
+        unique_duplicated = generic_results.get('unique_duplicated_gtins', 0)
+        st.metric("⚠️ Generic GTINs", f"{duplicate_count:,}", 
+                 f"{unique_duplicated:,} duplicated" if duplicate_count > 0 else f"{generic_results.get('unique_gtins', 0):,} unique")
     
     with col5:
         st.metric("🚫 Placeholder GTINs", f"{placeholder_results['total']:,}",
@@ -870,15 +907,40 @@ def main():
         else:
             st.info("ℹ️ GTIN Inner column not found in the data file.")
     
-    # Tab 4: Generic GTINs
+    # Tab 4: Generic GTINs Duplicates
     with tab4:
-        st.markdown("#### ⚠️ Generic GTINs Analysis")
+        st.markdown("#### ⚠️ Generic GTINs Duplicates Analysis")
+        st.markdown("*Analysis of Generic GTINs that appear as duplicates*")
         
         if generic_results["total"] > 0:
             st.markdown(f"**Found {generic_results['total']:,} records with {generic_results['unique_gtins']:,} unique Generic GTINs**")
             
-            # By Legal Entity
-            st.markdown("##### 📊 Distribution by Legal Entity")
+            if generic_results["duplicate_count"] > 0:
+                st.markdown(f"**🔄 {generic_results['duplicate_count']:,} duplicate records ({generic_results['unique_duplicated_gtins']:,} unique duplicated Generic GTINs)**")
+                
+                # Duplicate Summary
+                st.markdown("##### 📋 Generic GTINs Duplicate Summary")
+                if len(generic_results["duplicate_summary"]) > 0:
+                    st.dataframe(generic_results["duplicate_summary"], use_container_width=True, hide_index=True)
+                    
+                    # Chart: Duplicates by Entity Count
+                    st.markdown("##### 📊 Distribution: How Many Entities Share Each Generic GTIN")
+                    entity_count_dist = generic_results["duplicate_summary"]["Entity Count"].value_counts().sort_index()
+                    fig_entity_dist = px.bar(
+                        x=entity_count_dist.index,
+                        y=entity_count_dist.values,
+                        title="Number of Generic GTINs by Entity Count",
+                        labels={"x": "Number of Legal Entities", "y": "Number of Generic GTINs"}
+                    )
+                    fig_entity_dist.update_layout(template='plotly_dark', height=400)
+                    st.plotly_chart(fig_entity_dist, use_container_width=True)
+                else:
+                    st.info("No duplicate summary available")
+            else:
+                st.info("ℹ️ No duplicates found among Generic GTINs")
+            
+            # Distribution by Legal Entity (all Generic GTINs)
+            st.markdown("##### 📊 Distribution by Legal Entity (All Generic GTINs)")
             if len(generic_results["by_entity"]) > 0:
                 st.dataframe(generic_results["by_entity"], use_container_width=True, hide_index=True)
                 
@@ -887,27 +949,28 @@ def main():
                     generic_results["by_entity"],
                     x="Legal Entity",
                     y="Total Records",
-                    title="Generic GTINs by Legal Entity",
+                    title="Generic GTINs Distribution by Legal Entity",
                     labels={"Total Records": "Number of Records", "Legal Entity": "Legal Entity"}
                 )
                 fig_generic.update_layout(template='plotly_dark', height=400)
                 st.plotly_chart(fig_generic, use_container_width=True)
             
-            # List of Generic GTINs
-            st.markdown("##### 📋 Generic GTINs List")
-            generic_list_df = pd.DataFrame({"Generic GTIN": generic_results["gtin_list"]})
-            st.dataframe(generic_list_df, use_container_width=True, hide_index=True)
-            
-            # Detailed view
-            with st.expander("View All Generic GTIN Records"):
-                display_cols = ["Legal Entity", gtin_outer_col, "gtin_outer_normalized"]
-                if "SUPC" in generic_results["full_df"].columns:
-                    display_cols.append("SUPC")
-                if "Local Product Description" in generic_results["full_df"].columns:
-                    display_cols.append("Local Product Description")
-                
-                available_cols = [col for col in display_cols if col in generic_results["full_df"].columns]
-                st.dataframe(generic_results["full_df"][available_cols], use_container_width=True, hide_index=True)
+            # Detailed view of duplicates
+            if generic_results["duplicate_count"] > 0:
+                with st.expander("View All Generic GTIN Duplicate Records"):
+                    # Get only duplicate records
+                    generic_duplicates_df = generic_results["full_df"][
+                        generic_results["full_df"].duplicated(subset=["gtin_outer_normalized"], keep=False)
+                    ].copy()
+                    
+                    display_cols = ["Legal Entity", gtin_outer_col, "gtin_outer_normalized"]
+                    if "SUPC" in generic_duplicates_df.columns:
+                        display_cols.append("SUPC")
+                    if "Local Product Description" in generic_duplicates_df.columns:
+                        display_cols.append("Local Product Description")
+                    
+                    available_cols = [col for col in display_cols if col in generic_duplicates_df.columns]
+                    st.dataframe(generic_duplicates_df[available_cols], use_container_width=True, hide_index=True)
         else:
             st.success("✅ No Generic GTINs found!")
     
