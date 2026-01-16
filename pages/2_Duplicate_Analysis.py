@@ -145,7 +145,7 @@ def normalize_gtin(value):
 
 @st.cache_data
 def load_duplicate_data():
-    """Load data and find GTIN Outer and Inner columns."""
+    """Load data and find GTIN Outer, Inner, and Generic GTIN columns."""
     df = pd.read_excel(INPUT_FILE, dtype=str)
     
     # Find GTIN-Outer column
@@ -162,6 +162,14 @@ def load_duplicate_data():
             if col_lower in ["gtin-outer", "gtin_outer", "gtinouter"]:
                 gtin_outer_col = col
                 break
+    
+    # Find Generic GTIN column
+    generic_gtin_col = None
+    for col in df.columns:
+        col_lower = str(col).lower().strip()
+        if "generic" in col_lower and "gtin" in col_lower:
+            generic_gtin_col = col
+            break
     
     # Find GTIN-Inner column
     gtin_inner_col = None
@@ -180,19 +188,41 @@ def load_duplicate_data():
     
     if gtin_outer_col is None:
         st.error("GTIN-Outer column not found!")
-        return None, None, None
+        return None, None, None, None
     
     if gtin_inner_col is None:
         st.warning("GTIN-Inner column not found! Only Outer duplicates will be analyzed.")
     
-    # Normalize GTINs
-    df["gtin_outer_normalized"] = df[gtin_outer_col].apply(normalize_gtin)
+    # Normalize GTINs: prioritize Generic GTIN column if both exist and Generic GTIN is filled
+    # Otherwise use GTIN Outer
+    def get_gtin_outer_normalized(row):
+        if generic_gtin_col and pd.notna(row.get(generic_gtin_col)) and str(row.get(generic_gtin_col)).strip() not in ["", "nan"]:
+            # Use Generic GTIN if it exists and is not empty
+            return normalize_gtin(row[generic_gtin_col])
+        elif gtin_outer_col and pd.notna(row.get(gtin_outer_col)) and str(row.get(gtin_outer_col)).strip() not in ["", "nan"]:
+            # Otherwise use GTIN Outer
+            return normalize_gtin(row[gtin_outer_col])
+        else:
+            return None
+    
+    df["gtin_outer_normalized"] = df.apply(get_gtin_outer_normalized, axis=1)
+    
+    # Store which column was used for reference
+    if generic_gtin_col:
+        df["gtin_source"] = df.apply(
+            lambda row: "Generic GTIN" if (pd.notna(row.get(generic_gtin_col)) and str(row.get(generic_gtin_col)).strip() not in ["", "nan"]) 
+            else ("GTIN Outer" if (pd.notna(row.get(gtin_outer_col)) and str(row.get(gtin_outer_col)).strip() not in ["", "nan"]) else "None"),
+            axis=1
+        )
+    else:
+        df["gtin_source"] = "GTIN Outer"
+    
     if gtin_inner_col:
         df["gtin_inner_normalized"] = df[gtin_inner_col].apply(normalize_gtin)
     else:
         df["gtin_inner_normalized"] = None
     
-    return df, gtin_outer_col, gtin_inner_col
+    return df, gtin_outer_col, gtin_inner_col, generic_gtin_col
 
 
 def is_suspect_gtin(gtin):
@@ -268,31 +298,41 @@ def analyze_duplicates(df, gtin_outer_col, gtin_inner_col):
     return results
 
 
-def analyze_generic_gtins(df, gtin_outer_col):
+def analyze_generic_gtins(df, gtin_outer_col, generic_gtin_col=None):
     """Analyze Generic GTINs and their distribution by Legal Entity."""
-    # Classify GTINs
-    df["gtin_status"] = df[gtin_outer_col].apply(classify_gtin_status)
+    # Classify GTINs based on normalized GTIN
+    df["gtin_status"] = df["gtin_outer_normalized"].apply(
+        lambda x: classify_gtin_status(x) if x is not None else "MISSING"
+    )
     
-    # Filter Generic GTINs
-    generic_df = df[df["gtin_status"] == "GENERIC_GTIN"].copy()
+    # Filter Generic GTINs (either from classification or from Generic GTIN column)
+    if generic_gtin_col and generic_gtin_col in df.columns:
+        # If Generic GTIN column exists, use it directly
+        generic_df = df[df[generic_gtin_col].notna() & (df[generic_gtin_col].astype(str).str.strip() != "")].copy()
+        if len(generic_df) == 0:
+            # Fallback to classification
+            generic_df = df[df["gtin_status"] == "GENERIC_GTIN"].copy()
+    else:
+        # Use classification
+        generic_df = df[df["gtin_status"] == "GENERIC_GTIN"].copy()
     
     if len(generic_df) == 0:
         return {
             "total": 0,
             "unique_gtins": 0,
             "by_entity": pd.DataFrame(),
-            "gtin_list": []
+            "gtin_list": [],
+            "full_df": pd.DataFrame()
         }
     
     # Analysis by Legal Entity
     by_entity = generic_df.groupby("Legal Entity").agg({
-        gtin_outer_col: "count",
-        "gtin_outer_normalized": "nunique"
+        "gtin_outer_normalized": ["count", "nunique"]
     }).reset_index()
     by_entity.columns = ["Legal Entity", "Total Records", "Unique Generic GTINs"]
     by_entity = by_entity.sort_values("Total Records", ascending=False)
     
-    unique_generics = generic_df["gtin_outer_normalized"].unique().tolist()
+    unique_generics = generic_df["gtin_outer_normalized"].dropna().unique().tolist()
     
     return {
         "total": len(generic_df),
@@ -300,6 +340,43 @@ def analyze_generic_gtins(df, gtin_outer_col):
         "by_entity": by_entity,
         "gtin_list": unique_generics,
         "full_df": generic_df
+    }
+
+
+def analyze_placeholder_gtins(df, gtin_outer_col):
+    """Analyze Placeholder GTINs (9999...999) and their distribution by Legal Entity."""
+    # Classify GTINs
+    df["gtin_status"] = df["gtin_outer_normalized"].apply(
+        lambda x: classify_gtin_status(x) if x is not None else "MISSING"
+    )
+    
+    # Filter Placeholder GTINs (EXPLICIT_BLOCKED = 99999999999999)
+    placeholder_df = df[df["gtin_status"] == "EXPLICIT_BLOCKED"].copy()
+    
+    if len(placeholder_df) == 0:
+        return {
+            "total": 0,
+            "unique_gtins": 0,
+            "by_entity": pd.DataFrame(),
+            "gtin_list": [],
+            "full_df": pd.DataFrame()
+        }
+    
+    # Analysis by Legal Entity
+    by_entity = placeholder_df.groupby("Legal Entity").agg({
+        "gtin_outer_normalized": ["count", "nunique"]
+    }).reset_index()
+    by_entity.columns = ["Legal Entity", "Total Records", "Unique Placeholder GTINs"]
+    by_entity = by_entity.sort_values("Total Records", ascending=False)
+    
+    unique_placeholders = placeholder_df["gtin_outer_normalized"].dropna().unique().tolist()
+    
+    return {
+        "total": len(placeholder_df),
+        "unique_gtins": len(unique_placeholders),
+        "by_entity": by_entity,
+        "gtin_list": unique_placeholders,
+        "full_df": placeholder_df
     }
 
 
@@ -454,7 +531,7 @@ def main():
         result = load_duplicate_data()
         if result[0] is None:
             return
-        df, gtin_outer_col, gtin_inner_col = result
+        df, gtin_outer_col, gtin_inner_col, generic_gtin_col = result
     
     total_rows = len(df)
     
@@ -462,9 +539,12 @@ def main():
     with st.spinner("Analyzing duplicates..."):
         duplicate_results = analyze_duplicates(df, gtin_outer_col, gtin_inner_col)
     
-    # Analyze Generic, Suspect, and Valid GTINs
+    # Analyze Generic, Suspect, Placeholder, and Valid GTINs
     with st.spinner("Analyzing Generic GTINs..."):
-        generic_results = analyze_generic_gtins(df, gtin_outer_col)
+        generic_results = analyze_generic_gtins(df, gtin_outer_col, generic_gtin_col)
+    
+    with st.spinner("Analyzing Placeholder GTINs..."):
+        placeholder_results = analyze_placeholder_gtins(df, gtin_outer_col)
     
     with st.spinner("Analyzing Suspect GTINs..."):
         suspect_results = analyze_suspect_gtins(df, gtin_outer_col)
@@ -475,7 +555,7 @@ def main():
     # Overview Metrics
     st.markdown('<div class="section-header">📊 Overview</div>', unsafe_allow_html=True)
     
-    col1, col2, col3, col4, col5, col6 = st.columns(6)
+    col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
     
     with col1:
         st.metric("📦 Total Products", f"{total_rows:,}")
@@ -498,10 +578,14 @@ def main():
                  f"{generic_results['unique_gtins']:,} unique")
     
     with col5:
+        st.metric("🚫 Placeholder GTINs", f"{placeholder_results['total']:,}",
+                 f"{placeholder_results['unique_gtins']:,} unique")
+    
+    with col6:
         st.metric("🔍 Suspect GTINs", f"{suspect_results['total']:,}",
                  f"{suspect_results['unique_gtins']:,} unique")
     
-    with col6:
+    with col7:
         st.metric("✅ Valid GTINs", f"{valid_results['total']:,}",
                  f"{valid_results['unique_gtins']:,} unique")
     
@@ -535,11 +619,12 @@ def main():
     st.markdown('<div class="section-header">📋 Detailed Analysis</div>', unsafe_allow_html=True)
     
     # Tabs for different analysis types
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "🔄 Cross Duplicates", 
         "📦 GTIN Outer Duplicates", 
         "📦 GTIN Inner Duplicates",
         "⚠️ Generic GTINs",
+        "🚫 Placeholder GTINs",
         "🔍 Suspect GTINs",
         "✅ Valid GTINs by Entity"
     ])
@@ -729,8 +814,52 @@ def main():
         else:
             st.success("✅ No Generic GTINs found!")
     
-    # Tab 5: Suspect GTINs
+    # Tab 5: Placeholder GTINs
     with tab5:
+        st.markdown("#### 🚫 Placeholder GTINs Analysis")
+        st.markdown("*GTINs with placeholder values (9999...999)*")
+        
+        if placeholder_results["total"] > 0:
+            st.markdown(f"**Found {placeholder_results['total']:,} records with {placeholder_results['unique_gtins']:,} unique Placeholder GTINs**")
+            
+            # By Legal Entity
+            st.markdown("##### 📊 Distribution by Legal Entity")
+            if len(placeholder_results["by_entity"]) > 0:
+                st.dataframe(placeholder_results["by_entity"], use_container_width=True, hide_index=True)
+                
+                # Chart
+                fig_placeholder = px.bar(
+                    placeholder_results["by_entity"],
+                    x="Legal Entity",
+                    y="Total Records",
+                    title="Placeholder GTINs by Legal Entity",
+                    labels={"Total Records": "Number of Records", "Legal Entity": "Legal Entity"}
+                )
+                fig_placeholder.update_layout(template='plotly_dark', height=400)
+                st.plotly_chart(fig_placeholder, use_container_width=True)
+            
+            # List of Placeholder GTINs
+            st.markdown("##### 📋 Placeholder GTINs List")
+            placeholder_list_df = pd.DataFrame({"Placeholder GTIN": placeholder_results["gtin_list"]})
+            st.dataframe(placeholder_list_df, use_container_width=True, hide_index=True)
+            
+            # Detailed view
+            with st.expander("View All Placeholder GTIN Records"):
+                display_cols = ["Legal Entity", gtin_outer_col, "gtin_outer_normalized"]
+                if generic_gtin_col and generic_gtin_col in placeholder_results["full_df"].columns:
+                    display_cols.append(generic_gtin_col)
+                if "SUPC" in placeholder_results["full_df"].columns:
+                    display_cols.append("SUPC")
+                if "Local Product Description" in placeholder_results["full_df"].columns:
+                    display_cols.append("Local Product Description")
+                
+                available_cols = [col for col in display_cols if col in placeholder_results["full_df"].columns]
+                st.dataframe(placeholder_results["full_df"][available_cols], use_container_width=True, hide_index=True)
+        else:
+            st.success("✅ No Placeholder GTINs found!")
+    
+    # Tab 6: Suspect GTINs
+    with tab6:
         st.markdown("#### 🔍 Suspect GTINs Analysis")
         st.markdown("*GTINs with suspicious patterns (e.g., repeated digits like 18414900000000)*")
         
@@ -771,8 +900,8 @@ def main():
         else:
             st.success("✅ No Suspect GTINs found!")
     
-    # Tab 6: Valid GTINs by Entity
-    with tab6:
+    # Tab 7: Valid GTINs by Entity
+    with tab7:
         st.markdown("#### ✅ Valid GTINs - Sharing Analysis by Legal Entity")
         
         if valid_results["total"] > 0:
