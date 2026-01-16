@@ -106,6 +106,38 @@ st.markdown("""
         box-shadow: 0 2px 8px rgba(0,0,0,0.3);
         border: 1px solid #334155;
     }
+    .filter-section {
+        background-color: #1e293b;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin-bottom: 2rem;
+        border: 1px solid #334155;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    }
+    /* Align Reset buttons with multiselect field */
+    div[data-testid="column"]:has(button:contains("Reset")) {
+        padding-top: 1.5rem !important;
+    }
+    /* Increase multiselect height to align with Reset buttons */
+    div[data-testid="stMultiSelect"] {
+        min-height: 5.5rem !important;
+    }
+    div[data-testid="stMultiSelect"] > div {
+        min-height: 5.5rem !important;
+    }
+    div[data-testid="stMultiSelect"] > div > div {
+        min-height: 5.5rem !important;
+    }
+    /* Hide empty filter-section divs and empty containers */
+    div.filter-section:empty,
+    div[class*="filter-section"]:empty,
+    div[data-testid="stElementContainer"]:has(div.filter-section:empty),
+    div[data-testid="stElementContainer"]:has(div[class*="filter-section"]:empty) {
+        display: none !important;
+        height: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
     /* Custom Save button styling - softer blue */
     button[kind="primary"][data-testid="baseButton-save_duplicate_analysis_top"] {
         background-color: #3b82f6 !important;
@@ -573,12 +605,13 @@ def main():
     col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
     
     with col1:
-        st.metric("📦 Total Products", f"{total_rows:,}")
+        st.metric("📦 Total Products", f"{len(df_filtered):,}", 
+                 f"Filtered from {total_rows:,} total")
     
     with col2:
         outer_dup = duplicate_results["outer"]["total_duplicates"]
         st.metric("🔄 Outer Duplicates", f"{outer_dup:,}", 
-                 f"{outer_dup/total_rows*100:.1f}%" if total_rows > 0 else "0%")
+                 f"{outer_dup/len(df_filtered)*100:.1f}%" if len(df_filtered) > 0 else "0%")
     
     with col3:
         if duplicate_results["cross"]:
@@ -615,14 +648,19 @@ def main():
         # Prepare duplicate metrics
         tracker_entry = {
             "analysis_type": "duplicate",
-            "total_products": total_rows,
+            "legal_entities": selected_entities,
+            "total_products": len(df_filtered),
             "outer_duplicates": duplicate_results["outer"]["total_duplicates"],
             "outer_unique_duplicated": duplicate_results["outer"]["unique_duplicated_gtins"],
             "inner_duplicates": duplicate_results["inner"]["total_duplicates"] if duplicate_results["inner"] else 0,
             "inner_unique_duplicated": duplicate_results["inner"]["unique_duplicated_gtins"] if duplicate_results["inner"] else 0,
             "cross_duplicates": duplicate_results["cross"]["unique_cross_gtins"] if duplicate_results["cross"] else 0,
             "cross_total_records": duplicate_results["cross"]["total_records"] if duplicate_results["cross"] else 0,
-            "has_inner_column": gtin_inner_col is not None
+            "has_inner_column": gtin_inner_col is not None,
+            "generic_gtins": generic_results["total"],
+            "placeholder_gtins": placeholder_results["total"],
+            "suspect_gtins": suspect_results["total"],
+            "valid_gtins": valid_results["total"]
         }
         
         if save_tracker_data(tracker_entry):
@@ -991,7 +1029,8 @@ def main():
     st.markdown(
         f"<div style='text-align: center; color: #cbd5e1; padding: 1rem;'>"
         f"📅 Analysis generated on {date.today().strftime('%B %d, %Y')} | "
-        f"Total: <strong style='color: #94a3b8;'>{total_rows:,}</strong> products analyzed"
+        f"Filtered: <strong style='color: #94a3b8;'>{len(df_filtered):,}</strong> products from <strong style='color: #94a3b8;'>{total_rows:,}</strong> total | "
+        f"Legal Entities: <strong style='color: #94a3b8;'>{', '.join(selected_entities)}</strong>"
         f"</div>",
         unsafe_allow_html=True
     )
