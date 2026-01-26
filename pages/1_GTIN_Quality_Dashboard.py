@@ -199,7 +199,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent))
 
 # Import necessary functions
-INPUT_FILE = "all-products-prod-2026-01-13_15.30.30.xlsx"
+INPUT_FILE = "all-products-prod-2026-01-22_15.44.25.xlsx"
 
 # MDM Business Rules
 GENERIC_GTINS = {

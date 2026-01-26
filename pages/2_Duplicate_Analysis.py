@@ -155,7 +155,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-INPUT_FILE = "all-products-prod-2026-01-13_15.30.30.xlsx"
+INPUT_FILE = "all-products-prod-2026-01-22_15.44.25.xlsx"
 
 
 def normalize_gtin(value):
