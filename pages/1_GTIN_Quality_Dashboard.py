@@ -449,10 +449,9 @@ def main():
     st.markdown('<div class="filter-section">', unsafe_allow_html=True)
     st.markdown("### 🔍 Filters")
     
-    # Legal Entity filter
-    legal_entities = sorted(df["Legal Entity"].unique())
+    search_query = st.text_input("🔍 Search SUPC or GTIN", placeholder="e.g. 12345 or 08701234567890", key="search_supc_gtin", help="Exact match on SUPC or GTIN (Outer, normalized).")
     
-    # Initialize session state for selected entities
+    legal_entities = sorted(df["Legal Entity"].unique())
     if "selected_entities" not in st.session_state:
         st.session_state.selected_entities = legal_entities
     
@@ -464,11 +463,8 @@ def main():
             default=st.session_state.selected_entities,
             help="Select one or more Legal Entities to analyze"
         )
-        # Update session state
         st.session_state.selected_entities = selected_entities
-    
     with col2:
-        # Stack buttons vertically, aligned with multiselect
         st.markdown('<div style="padding-top: 1.5rem;">', unsafe_allow_html=True)
         if st.button("🔄 Reset to All", use_container_width=True):
             st.session_state.selected_entities = legal_entities
@@ -477,12 +473,6 @@ def main():
             st.session_state.selected_entities = []
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
-    
-    col_search, col_scope = st.columns([3, 1])
-    with col_search:
-        search_query = st.text_input("🔍 Search SUPC or GTIN", placeholder="e.g. 12345 or 08701234567890", key="search_supc_gtin")
-    with col_scope:
-        search_scope = st.selectbox("Search in", ["SUPC only", "GTIN only", "SUPC and GTIN"], index=0, key="search_scope_quality", help="SUPC only: exact product. GTIN only: by code. Both: can mix matches.")
     
     st.markdown('</div>', unsafe_allow_html=True)
     
@@ -533,16 +523,15 @@ def main():
     # Filter data
     df_filtered = df[df["Legal Entity"].isin(selected_entities)].copy()
     
-    # Search filter (SUPC or GTIN)
+    # Search filter (SUPC or GTIN, exact match)
     if search_query and str(search_query).strip():
         q = str(search_query).strip()
         parts = []
-        if search_scope in ("SUPC only", "SUPC and GTIN") and "SUPC" in df_filtered.columns:
-            parts.append(df_filtered["SUPC"].astype(str).str.contains(q, case=False, regex=False, na=False))
-        if search_scope in ("GTIN only", "SUPC and GTIN"):
-            parts.append(df_filtered[gtin_col].astype(str).str.contains(q, case=False, regex=False, na=False))
-            if "gtin_outer_normalized" in df_filtered.columns:
-                parts.append(df_filtered["gtin_outer_normalized"].astype(str).str.contains(q, case=False, regex=False, na=False))
+        if "SUPC" in df_filtered.columns:
+            parts.append(df_filtered["SUPC"].fillna("").astype(str).str.strip() == q)
+        parts.append(df_filtered[gtin_col].fillna("").astype(str).str.strip() == q)
+        if "gtin_outer_normalized" in df_filtered.columns:
+            parts.append(df_filtered["gtin_outer_normalized"].fillna("").astype(str).str.strip() == q)
         if parts:
             mask = parts[0]
             for p in parts[1:]:
@@ -708,126 +697,51 @@ def main():
     )
     
     # Charts
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("#### 📊 Compliance Rate by Legal Entity")
-        fig_compliance = px.bar(
-            analysis_df.sort_values("Compliance Rate (%)", ascending=True),
-            x="Compliance Rate (%)",
-            y="Legal Entity",
-            orientation='h',
-            color="Compliance Rate (%)",
-            color_continuous_scale="RdYlGn",
-            text="Compliance Rate (%)",
-            labels={"Compliance Rate (%)": "Compliance Rate (%)", "Legal Entity": "Legal Entity"}
-        )
-        fig_compliance.update_traces(texttemplate='%{text:.1f}%', textposition='outside', textfont=dict(color='#f1f5f9', size=11))
-        fig_compliance.update_layout(
-            height=450, 
-            showlegend=False,
-            template='plotly_dark',
-            plot_bgcolor='#1e293b',
-            paper_bgcolor='#0f172a',
-            font=dict(size=12, color='#f1f5f9'),
-            xaxis=dict(gridcolor='#334155', gridwidth=1),
-            yaxis=dict(showgrid=False)
-        )
-        st.plotly_chart(fig_compliance, use_container_width=True)
-    
-    with col2:
+    if len(selected_entities) > 1:
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("#### 📊 Compliance Rate by Legal Entity")
+            fig_compliance = px.bar(
+                analysis_df.sort_values("Compliance Rate (%)", ascending=True),
+                x="Compliance Rate (%)",
+                y="Legal Entity",
+                orientation='h',
+                color="Compliance Rate (%)",
+                color_continuous_scale="RdYlGn",
+                text="Compliance Rate (%)",
+                labels={"Compliance Rate (%)": "Compliance Rate (%)", "Legal Entity": "Legal Entity"}
+            )
+            fig_compliance.update_traces(texttemplate='%{text:.1f}%', textposition='outside', textfont=dict(color='#f1f5f9', size=11))
+            fig_compliance.update_layout(height=450, showlegend=False, template='plotly_dark', plot_bgcolor='#1e293b', paper_bgcolor='#0f172a', font=dict(size=12, color='#f1f5f9'), xaxis=dict(gridcolor='#334155', gridwidth=1), yaxis=dict(showgrid=False))
+            st.plotly_chart(fig_compliance, use_container_width=True)
+        with col2:
+            st.markdown("#### 📈 GTIN Status Distribution")
+            status_summary = df_filtered["gtin_status"].value_counts().reset_index()
+            status_summary.columns = ["Status", "Count"]
+            fig_pie = px.pie(status_summary, values="Count", names="Status", hole=0.4, color_discrete_sequence=px.colors.qualitative.Set3)
+            fig_pie.update_traces(textposition='inside', textinfo='percent+label', textfont=dict(size=11, color='#f1f5f9'))
+            fig_pie.update_layout(height=450, template='plotly_dark', plot_bgcolor='#1e293b', paper_bgcolor='#0f172a', font=dict(size=12, color='#f1f5f9'), showlegend=True, legend=dict(orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.1, font=dict(color='#f1f5f9', size=11), bgcolor='rgba(30, 41, 59, 0.8)', bordercolor='#334155', borderwidth=1))
+            st.plotly_chart(fig_pie, use_container_width=True)
+    else:
         st.markdown("#### 📈 GTIN Status Distribution")
         status_summary = df_filtered["gtin_status"].value_counts().reset_index()
         status_summary.columns = ["Status", "Count"]
-        
-        fig_pie = px.pie(
-            status_summary,
-            values="Count",
-            names="Status",
-            hole=0.4,
-            color_discrete_sequence=px.colors.qualitative.Set3
-        )
-        fig_pie.update_traces(
-            textposition='inside', 
-            textinfo='percent+label',
-            textfont=dict(size=11, color='#f1f5f9')
-        )
-        fig_pie.update_layout(
-            height=450,
-            template='plotly_dark',
-            plot_bgcolor='#1e293b',
-            paper_bgcolor='#0f172a',
-            font=dict(size=12, color='#f1f5f9'),
-            showlegend=True,
-            legend=dict(
-                orientation="v", 
-                yanchor="middle", 
-                y=0.5, 
-                xanchor="left", 
-                x=1.1,
-                font=dict(color='#f1f5f9', size=11),
-                bgcolor='rgba(30, 41, 59, 0.8)',
-                bordercolor='#334155',
-                borderwidth=1
-            )
-        )
+        fig_pie = px.pie(status_summary, values="Count", names="Status", hole=0.4, color_discrete_sequence=px.colors.qualitative.Set3)
+        fig_pie.update_traces(textposition='inside', textinfo='percent+label', textfont=dict(size=11, color='#f1f5f9'))
+        fig_pie.update_layout(height=450, template='plotly_dark', plot_bgcolor='#1e293b', paper_bgcolor='#0f172a', font=dict(size=12, color='#f1f5f9'), showlegend=True, legend=dict(orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.1, font=dict(color='#f1f5f9', size=11), bgcolor='rgba(30, 41, 59, 0.8)', bordercolor='#334155', borderwidth=1))
         st.plotly_chart(fig_pie, use_container_width=True)
     
-    # Stacked bar chart by Legal Entity
-    st.markdown('<div class="section-header">📊 Status Details by Legal Entity</div>', unsafe_allow_html=True)
-    
-    # Prepare data for stacked bar - melt for better visualization
-    status_cols = ["Valid GTINs", "Invalid GTINs", "Generic GTINs", "Placeholder GTINs (999...99)"]
-    chart_data = analysis_df[["Legal Entity"] + status_cols].copy()
-    chart_data = chart_data.sort_values("Legal Entity")
-    
-    # Melt for stacked bar
-    chart_melted = pd.melt(
-        chart_data,
-        id_vars=["Legal Entity"],
-        value_vars=status_cols,
-        var_name="Status",
-        value_name="Count"
-    )
-    
-    fig_stacked = px.bar(
-        chart_melted,
-        x="Legal Entity",
-        y="Count",
-        color="Status",
-        barmode='stack',
-        labels={"Count": "Number of Products", "Legal Entity": "Legal Entity"},
-        color_discrete_map={
-            "Valid GTINs": "#2ecc71",
-            "Invalid GTINs": "#e74c3c",
-            "Generic GTINs": "#f39c12",
-            "Placeholder GTINs (999...99)": "#34495e"
-        }
-    )
-    fig_stacked.update_layout(
-        height=500,
-        template='plotly_dark',
-        plot_bgcolor='#1e293b',
-        paper_bgcolor='#0f172a',
-        font=dict(size=12, color='#f1f5f9'),
-        xaxis_title="Legal Entity",
-        yaxis_title="Number of Products",
-        legend=dict(
-            orientation="h", 
-            yanchor="bottom", 
-            y=1.02, 
-            xanchor="right", 
-            x=1,
-            font=dict(color='#f1f5f9', size=11),
-            bgcolor='rgba(30, 41, 59, 0.8)',
-            bordercolor='#334155',
-            borderwidth=1
-        ),
-        xaxis={'categoryorder': 'total descending'}
-    )
-    fig_stacked.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#334155', griddash='dash')
-    fig_stacked.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#334155', griddash='dash')
-    st.plotly_chart(fig_stacked, use_container_width=True)
+    if len(selected_entities) > 1:
+        st.markdown('<div class="section-header">📊 Status Details by Legal Entity</div>', unsafe_allow_html=True)
+        status_cols = ["Valid GTINs", "Invalid GTINs", "Generic GTINs", "Placeholder GTINs (999...99)"]
+        chart_data = analysis_df[["Legal Entity"] + status_cols].copy()
+        chart_data = chart_data.sort_values("Legal Entity")
+        chart_melted = pd.melt(chart_data, id_vars=["Legal Entity"], value_vars=status_cols, var_name="Status", value_name="Count")
+        fig_stacked = px.bar(chart_melted, x="Legal Entity", y="Count", color="Status", barmode='stack', labels={"Count": "Number of Products", "Legal Entity": "Legal Entity"}, color_discrete_map={"Valid GTINs": "#2ecc71", "Invalid GTINs": "#e74c3c", "Generic GTINs": "#f39c12", "Placeholder GTINs (999...99)": "#34495e"})
+        fig_stacked.update_layout(height=500, template='plotly_dark', plot_bgcolor='#1e293b', paper_bgcolor='#0f172a', font=dict(size=12, color='#f1f5f9'), xaxis_title="Legal Entity", yaxis_title="Number of Products", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(color='#f1f5f9', size=11), bgcolor='rgba(30, 41, 59, 0.8)', bordercolor='#334155', borderwidth=1), xaxis={'categoryorder': 'total descending'})
+        fig_stacked.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#334155', griddash='dash')
+        fig_stacked.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#334155', griddash='dash')
+        st.plotly_chart(fig_stacked, use_container_width=True)
     
     # Generics with Brand != EUPCKER
     st.markdown('<div class="section-header">⚠️ Generics with Brand ≠ EUPCKER</div>', unsafe_allow_html=True)
@@ -843,9 +757,10 @@ def main():
         by_ent["% of Entity Generics"] = (by_ent["Generics (Brand ≠ EUPCKER)"] / by_ent["Total Generics"] * 100).round(2)
         by_ent = by_ent.sort_values("Generics (Brand ≠ EUPCKER)", ascending=False)
         st.dataframe(by_ent, use_container_width=True, hide_index=True)
-        fig_ge = px.bar(by_ent, x="Legal Entity", y="Generics (Brand ≠ EUPCKER)", title="Generics (Brand ≠ EUPCKER) by Legal Entity", labels={"Generics (Brand ≠ EUPCKER)": "Count"})
-        fig_ge.update_layout(template="plotly_dark", height=400, plot_bgcolor="#1e293b", paper_bgcolor="#0f172a", font=dict(color="#f1f5f9"))
-        st.plotly_chart(fig_ge, use_container_width=True)
+        if len(selected_entities) > 1:
+            fig_ge = px.bar(by_ent, x="Legal Entity", y="Generics (Brand ≠ EUPCKER)", title="Generics (Brand ≠ EUPCKER) by Legal Entity", labels={"Generics (Brand ≠ EUPCKER)": "Count"})
+            fig_ge.update_layout(template="plotly_dark", height=400, plot_bgcolor="#1e293b", paper_bgcolor="#0f172a", font=dict(color="#f1f5f9"))
+            st.plotly_chart(fig_ge, use_container_width=True)
         st.markdown("##### Sample (first 20)")
         pc = [c for c in ["Legal Entity", "SUPC", "Local Product Description", brand_col, "OSD Classification", "gtin_outer_normalized"] if c in generics_non_eupcker.columns]
         st.dataframe(generics_non_eupcker[pc].head(20), use_container_width=True, hide_index=True)
@@ -897,247 +812,6 @@ def main():
             status_detail_display["Count"] = status_detail_display["Count"].apply(lambda x: f"{int(x):,}")
             status_detail_display["Percentage"] = status_detail_display["Percentage"].apply(lambda x: f"{x:.2f}%")
             st.dataframe(status_detail_display, use_container_width=True, hide_index=True)
-    
-    # ---------- EMAIL GENERATION FOR LEGAL ENTITIES ----------
-    st.markdown('<div class="section-header">📧 Generate Email for Legal Entity</div>', unsafe_allow_html=True)
-    
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        selected_entity_email = st.selectbox(
-            "**Select Legal Entity**",
-            legal_entities,
-            key="entity_email",
-            help="Select a Legal Entity to generate email and attachment"
-        )
-    
-    with col2:
-        st.markdown("<br>", unsafe_allow_html=True)
-        generate_email = st.button("📧 Generate Email & Report", use_container_width=True)
-    
-    if generate_email and selected_entity_email:
-        # Filter data for selected entity
-        entity_data = df[df["Legal Entity"] == selected_entity_email].copy()
-        
-        # Get Generic and Placeholder GTINs (accept both PLACEHOLDER and BLOCKED for backward compatibility)
-        generic_blocked = entity_data[entity_data["gtin_status"].isin(["GENERIC", "PLACEHOLDER", "BLOCKED"])].copy()
-        
-        generic_gtins = generic_blocked[generic_blocked["gtin_status"] == "GENERIC"].copy()
-        blocked_gtins = generic_blocked[generic_blocked["gtin_status"].isin(["PLACEHOLDER", "BLOCKED"])].copy()
-        
-        generic_count = len(generic_gtins)
-        blocked_count = len(blocked_gtins)
-        total_count = len(generic_blocked)
-        
-        if not generic_blocked.empty:
-            # Prepare Excel file - ensure at least one sheet is always created
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                # Always create Summary sheet first (ensures at least one sheet exists)
-                summary_data = {
-                    "Legal Entity": [selected_entity_email],
-                    "Total Generic GTINs": [generic_count],
-                    "Total Placeholder GTINs (999...99)": [blocked_count],
-                    "Total to Review": [total_count],
-                    "Report Date": [date.today().strftime("%Y-%m-%d")]
-                }
-                pd.DataFrame(summary_data).to_excel(writer, sheet_name="Summary", index=False)
-                
-                # Sheet 1: Generic GTINs (if any)
-                if not generic_gtins.empty:
-                    # Include all columns from original dataframe (raw data)
-                    generic_gtins.to_excel(
-                        writer, sheet_name="Generic GTINs", index=False
-                    )
-                
-                # Sheet 2: Placeholder GTINs (if any)
-                if not blocked_gtins.empty:
-                    # Include all columns from original dataframe (raw data)
-                    blocked_gtins.to_excel(
-                        writer, sheet_name="Placeholder GTINs (999...99)", index=False
-                    )
-            
-            output.seek(0)
-            
-            # Get recipients for this legal entity
-            recipients = LEGAL_ENTITY_EMAILS.get(selected_entity_email, [])
-            recipients_str = "; ".join(recipients) if recipients else ""
-            
-            # Extract first name from recipient email
-            first_name = ""
-            if recipients:
-                # Get the first recipient's email
-                first_email = recipients[0]
-                # Extract name before @ or before dot
-                if "@" in first_email:
-                    name_part = first_email.split("@")[0]
-                    # Remove hyphens and get first part
-                    name_parts = name_part.replace("-", ".").split(".")
-                    if name_parts:
-                        first_name = name_parts[0].capitalize()
-            
-            # Build greeting with first name if available
-            greeting = f"Hi {first_name}," if first_name else "Hi,"
-            
-            # Generate email template in English
-            email_subject = f"Action Required: Review of Generic and Placeholder GTINs - {selected_entity_email}"
-            
-            email_body = f"""{greeting}
-
-Your legal entity ({selected_entity_email}) has GTINs that require your attention and action.
-
-**Summary:**
-- Generic GTINs: {generic_count:,}
-- Placeholder GTINs (999...99): {blocked_count:,}
-- Total GTINs to review: {total_count:,}
-
-**Action Required:**
-Please review the attached Excel file which contains the detailed list of Generic and Placeholder GTINs (999...99) for your legal entity. These GTINs must be updated or replaced with valid product GTIN codes.
-
-**Next Steps:**
-1. Review the attached file
-2. Identify the products associated with these GTINs
-3. Update the GTINs with valid product codes
-4. Confirm completion once updates are completed
-
-If you have any questions or need assistance, please do not hesitate to contact the MDM team.
-
-Best regards
-
----
-Report generated on: {date.today().strftime("%B %d, %Y")}
-"""
-            
-            # Create Excel filename
-            excel_filename = f"GTIN_Review_{selected_entity_email.replace(' ', '_').replace('/', '_')}_{date.today().isoformat()}.xlsx"
-            
-            # Save Excel to temporary file for Outlook attachment
-            temp_dir = tempfile.gettempdir()
-            temp_excel_path = os.path.join(temp_dir, excel_filename)
-            
-            # Write Excel to temporary file
-            output.seek(0)
-            with open(temp_excel_path, 'wb') as f:
-                f.write(output.read())
-            
-            # Reset output for Excel download
-            output.seek(0)
-            
-            # Create .eml file for download (works on all platforms)
-            msg = MIMEMultipart()
-            msg['Subject'] = email_subject
-            msg['From'] = "MDM Team <mdm@sysco.com>"
-            if recipients:
-                msg['To'] = ", ".join(recipients)
-            else:
-                msg['To'] = ""
-            
-            # Add body
-            msg.attach(MIMEText(email_body, 'plain', 'utf-8'))
-            
-            # Add Excel attachment
-            output.seek(0)
-            attachment = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-            attachment.set_payload(output.read())
-            encoders.encode_base64(attachment)
-            attachment.add_header('Content-Disposition', f'attachment; filename= {excel_filename}')
-            msg.attach(attachment)
-            
-            # Convert to .eml format
-            eml_output = io.BytesIO()
-            eml_output.write(msg.as_bytes())
-            eml_output.seek(0)
-            output.seek(0)
-            
-            # Display email template with improved design
-            st.markdown("### 📝 Email Template")
-            
-            # Subject and download icons in same row - subject left-aligned, icons on right
-            col_subject, col_icons = st.columns([4, 1])
-            
-            with col_subject:
-                st.text_input("Subject", value=email_subject, key="email_subject", label_visibility="visible")
-            
-            with col_icons:
-                st.markdown("<br>", unsafe_allow_html=True)  # Spacing to align with input field
-                col_dl_eml, col_dl_excel = st.columns(2)
-                
-                with col_dl_eml:
-                    eml_filename = f"Email_Draft_{selected_entity_email.replace(' ', '_').replace('/', '_')}_{date.today().isoformat()}.eml"
-                    st.download_button(
-                        label="📥",
-                        data=eml_output,
-                        file_name=eml_filename,
-                        mime="message/rfc822",
-                        use_container_width=True,
-                        key="download_eml_icon",
-                        help="Download email with attachment (.eml)"
-                    )
-                
-                with col_dl_excel:
-                    st.download_button(
-                        label="📊",
-                        data=output,
-                        file_name=excel_filename,
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                        key="download_excel_icon",
-                        help="Download Excel file only"
-                    )
-            
-            # Email body with better styling
-            st.text_area("Email Body", value=email_body, height=300, key="email_body")
-            
-            # Show recipients info with better styling
-            st.markdown("---")
-            if recipients:
-                st.markdown(f"""
-                <div style="background-color: #1e293b; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #94a3b8; margin: 1rem 0;">
-                    <strong style="color: #94a3b8;">📧 Email Recipients for {selected_entity_email}:</strong><br>
-                    <span style="color: #cbd5e1;">{recipients_str}</span>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.markdown(f"""
-                <div style="background-color: #1e293b; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #f39c12; margin: 1rem 0;">
-                    <strong style="color: #f39c12;">⚠️ No email recipients configured for {selected_entity_email}</strong><br>
-                    <span style="color: #cbd5e1;">Please add recipients manually when opening the .eml file in Outlook.</span>
-                </div>
-                """, unsafe_allow_html=True)
-            
-            # Display preview
-            st.markdown("### 📊 Report Preview")
-            st.info(f"**{selected_entity_email}**: {generic_count:,} Generic GTINs, {blocked_count:,} Placeholder GTINs (999...99)")
-            
-            if not generic_gtins.empty:
-                st.markdown("#### Generic GTINs Sample (first 10)")
-                preview_cols = ["SUPC", "Local Product Description", "Brand", "OSD Classification"]
-                # Add gtin_status and gtin_outer_normalized for context
-                additional_cols = ["gtin_outer_normalized", "gtin_status"]
-                # Check which columns exist in the dataframe
-                available_preview_cols = [col for col in preview_cols + additional_cols if col in generic_gtins.columns]
-                if available_preview_cols:
-                    st.dataframe(
-                        generic_gtins[available_preview_cols].head(10),
-                        use_container_width=True,
-                        hide_index=True
-                    )
-            
-            if not blocked_gtins.empty:
-                st.markdown("#### Placeholder GTINs (999...99) Sample (first 10)")
-                preview_cols = ["SUPC", "Local Product Description", "Brand", "OSD Classification"]
-                # Add gtin_status and gtin_outer_normalized for context
-                additional_cols = ["gtin_outer_normalized", "gtin_status"]
-                # Check which columns exist in the dataframe
-                available_preview_cols = [col for col in preview_cols + additional_cols if col in blocked_gtins.columns]
-                if available_preview_cols:
-                    st.dataframe(
-                        blocked_gtins[available_preview_cols].head(10),
-                        use_container_width=True,
-                        hide_index=True
-                    )
-        else:
-            st.success(f"✅ **{selected_entity_email}** has no Generic or Placeholder GTINs. No action required!")
     
     # Footer
     st.markdown("---")

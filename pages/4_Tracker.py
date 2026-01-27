@@ -261,6 +261,7 @@ def main():
         dup_chart_df = pd.DataFrame([
             {
                 "Date": entry.get("date", ""),
+                "Time": entry.get("time", ""),
                 "Timestamp": entry.get("timestamp", ""),
                 "Outer Duplicates": entry.get("outer_duplicates", 0),
                 "Outer Unique Duplicated": entry.get("outer_unique_duplicated", 0),
