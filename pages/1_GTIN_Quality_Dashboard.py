@@ -83,6 +83,10 @@ st.markdown("""
         font-weight: 700;
         color: #f1f5f9;
     }
+    /* Breakdown (8/13/14): smaller font to avoid truncation */
+    div[data-testid="stHorizontalBlock"]:has(> div:nth-of-type(7)) > div:nth-of-type(6) [data-testid="stMetricValue"] {
+        font-size: 1.15rem !important;
+    }
     .stMetric [data-testid="stMetricDelta"] {
         font-size: 1rem;
         font-weight: 600;

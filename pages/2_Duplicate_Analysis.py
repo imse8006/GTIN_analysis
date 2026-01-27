@@ -736,7 +736,8 @@ def main():
     
     with col6:
         st.metric("🔍 Suspect GTINs", f"{suspect_results['total']:,}",
-                 f"{suspect_results['unique_gtins']:,} unique")
+                 f"{suspect_results['unique_gtins']:,} unique",
+                 help="Suspect = same digit ≥60% of length, or ≥6 trailing zeros (or half length). Excludes Generic.")
     
     with col7:
         st.metric("✅ Valid GTINs", f"{valid_results['total']:,}",
