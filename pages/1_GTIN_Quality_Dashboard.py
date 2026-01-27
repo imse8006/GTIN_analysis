@@ -478,6 +478,8 @@ def main():
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
     
+    search_query = st.text_input("🔍 Search SUPC or GTIN", placeholder="e.g. 12345 or 08701234567890", key="search_supc_gtin")
+    
     st.markdown('</div>', unsafe_allow_html=True)
     
     # Ensure filter-section div is properly closed and remove empty elements
@@ -526,6 +528,23 @@ def main():
     
     # Filter data
     df_filtered = df[df["Legal Entity"].isin(selected_entities)].copy()
+    
+    # Search filter (SUPC or GTIN)
+    if search_query and str(search_query).strip():
+        q = str(search_query).strip()
+        parts = []
+        if "SUPC" in df_filtered.columns:
+            parts.append(df_filtered["SUPC"].astype(str).str.contains(q, case=False, regex=False, na=False))
+        parts.append(df_filtered[gtin_col].astype(str).str.contains(q, case=False, regex=False, na=False))
+        if "gtin_outer_normalized" in df_filtered.columns:
+            parts.append(df_filtered["gtin_outer_normalized"].astype(str).str.contains(q, case=False, regex=False, na=False))
+        if parts:
+            mask = parts[0]
+            for p in parts[1:]:
+                mask = mask | p
+            df_filtered = df_filtered[mask].copy()
+        if len(df_filtered) == 0:
+            st.info("No results for your search.")
     
     # Overall metrics
     st.markdown('<div class="section-header">📈 Overview</div>', unsafe_allow_html=True)
