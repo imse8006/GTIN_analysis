@@ -530,7 +530,7 @@ def main():
     # Overall metrics
     st.markdown('<div class="section-header">📈 Overview</div>', unsafe_allow_html=True)
     
-    col1, col2, col3, col4, col5, col6 = st.columns(6)
+    col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
     
     valid_statuses = ["8_digits", "13_digits", "14_digits"]
     
@@ -543,9 +543,19 @@ def main():
     total_13 = df_filtered[df_filtered["gtin_status"] == "13_digits"].shape[0]
     total_14 = df_filtered[df_filtered["gtin_status"] == "14_digits"].shape[0]
     
+    brand_col = next((c for c in df_filtered.columns if str(c).strip().lower() == "brand"), None)
+    generics_non_eupcker = pd.DataFrame()
+    total_generics_non_eupcker = 0
+    if brand_col:
+        generics_df = df_filtered[df_filtered["gtin_status"] == "GENERIC"].copy()
+        is_not_eupcker = generics_df[brand_col].fillna("").astype(str).str.strip().str.upper() != "EUPCKER"
+        generics_non_eupcker = generics_df[is_not_eupcker]
+        total_generics_non_eupcker = len(generics_non_eupcker)
+    
     compliance_rate = (total_valid / len(df_filtered) * 100) if len(df_filtered) > 0 else 0
     invalid_rate = (total_invalid / len(df_filtered) * 100) if len(df_filtered) > 0 else 0
     
+    col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
     with col1:
         st.metric("📦 Total Products", f"{len(df_filtered):,}")
     with col2:
@@ -558,6 +568,11 @@ def main():
         st.metric("🚫 Placeholder GTINs (999...99)", f"{total_blocked:,}")
     with col6:
         st.metric("📊 Breakdown", f"{total_8}/{total_13}/{total_14}", help="8 digits / 13 digits / 14 digits")
+    with col7:
+        if brand_col is not None:
+            st.metric("⚠️ Generics (Brand ≠ EUPCKER)", f"{total_generics_non_eupcker:,}", help="Generic GTINs where Brand is not EUPCKER")
+        else:
+            st.metric("⚠️ Generics (Brand ≠ EUPCKER)", "N/A", help="Column Brand not found")
     
     # Handle save button click (button is at the top, but logic is here after data is loaded)
     if st.session_state.get("save_quality_requested", False):
@@ -789,6 +804,27 @@ def main():
     fig_stacked.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#334155', griddash='dash')
     fig_stacked.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#334155', griddash='dash')
     st.plotly_chart(fig_stacked, use_container_width=True)
+    
+    # Generics with Brand != EUPCKER
+    st.markdown('<div class="section-header">⚠️ Generics with Brand ≠ EUPCKER</div>', unsafe_allow_html=True)
+    if brand_col is None:
+        st.warning("Column **Brand** not found in the data. This analysis is not available.")
+    elif len(generics_non_eupcker) == 0:
+        st.success("✅ No Generic GTINs with Brand ≠ EUPCKER.")
+    else:
+        st.markdown(f"*Generic GTINs where Brand is not EUPCKER: **{total_generics_non_eupcker:,}** records.*")
+        by_ent = generics_non_eupcker.groupby("Legal Entity").size().reset_index(name="Generics (Brand ≠ EUPCKER)")
+        total_gen_ent = df_filtered[df_filtered["gtin_status"] == "GENERIC"].groupby("Legal Entity").size()
+        by_ent = by_ent.merge(total_gen_ent.rename("Total Generics"), left_on="Legal Entity", right_index=True, how="left")
+        by_ent["% of Entity Generics"] = (by_ent["Generics (Brand ≠ EUPCKER)"] / by_ent["Total Generics"] * 100).round(2)
+        by_ent = by_ent.sort_values("Generics (Brand ≠ EUPCKER)", ascending=False)
+        st.dataframe(by_ent, use_container_width=True, hide_index=True)
+        fig_ge = px.bar(by_ent, x="Legal Entity", y="Generics (Brand ≠ EUPCKER)", title="Generics (Brand ≠ EUPCKER) by Legal Entity", labels={"Generics (Brand ≠ EUPCKER)": "Count"})
+        fig_ge.update_layout(template="plotly_dark", height=400, plot_bgcolor="#1e293b", paper_bgcolor="#0f172a", font=dict(color="#f1f5f9"))
+        st.plotly_chart(fig_ge, use_container_width=True)
+        st.markdown("##### Sample (first 20)")
+        pc = [c for c in ["Legal Entity", "SUPC", "Local Product Description", brand_col, "OSD Classification", "gtin_outer_normalized"] if c in generics_non_eupcker.columns]
+        st.dataframe(generics_non_eupcker[pc].head(20), use_container_width=True, hide_index=True)
     
     # Detailed status breakdown
     st.markdown('<div class="section-header">🔍 Detailed Status Breakdown</div>', unsafe_allow_html=True)
