@@ -435,10 +435,10 @@ def main():
         st.stop()
     
     # Header
-    st.markdown('<h1 class="main-header">📊 GTIN Quality Dashboard</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">GTIN Quality Dashboard</h1>', unsafe_allow_html=True)
     
     # Display source file info
-    st.markdown(f'<div style="text-align: center; color: #cbd5e1; margin-bottom: 1rem;">📁 Source file: <strong style="color: #94a3b8;">{INPUT_FILE}</strong></div>', unsafe_allow_html=True)
+    st.markdown(f'<div style="text-align: center; color: #cbd5e1; margin-bottom: 1rem;">Source file: <strong style="color: #94a3b8;">{INPUT_FILE}</strong></div>', unsafe_allow_html=True)
     
     # Save Analysis button - positioned right after source file with improved centered design
     col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 2])
@@ -457,7 +457,7 @@ def main():
     
     # Horizontal filters section
     st.markdown('<div class="filter-section">', unsafe_allow_html=True)
-    st.markdown("### 🔍 Filters")
+    st.markdown("### Filters")
     
     search_query = st.text_input("🔍 Search SUPC or GTIN", placeholder="e.g. 12345 or 08701234567890", key="search_supc_gtin", help="Exact match on SUPC or GTIN (Outer, normalized).")
     
@@ -476,7 +476,7 @@ def main():
         st.session_state.selected_entities = selected_entities
     with col2:
         st.markdown('<div style="padding-top: 1.5rem;">', unsafe_allow_html=True)
-        if st.button("🔄 Reset to All", use_container_width=True):
+        if st.button("Reset to All", use_container_width=True):
             st.session_state.selected_entities = legal_entities
             st.rerun()
         if st.button("Reset", use_container_width=True):
@@ -527,7 +527,7 @@ def main():
     selected_entities = st.session_state.selected_entities
     
     if not selected_entities:
-        st.warning("⚠️ Please select at least one Legal Entity")
+        st.warning("Please select at least one Legal Entity")
         return
     
     # Filter data
@@ -551,7 +551,7 @@ def main():
             st.info("No results for your search.")
     
     # Overall metrics
-    st.markdown('<div class="section-header">📈 Overview</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">Overview</div>', unsafe_allow_html=True)
     
     col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
     
@@ -580,22 +580,22 @@ def main():
     
     col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
     with col1:
-        st.metric("📦 Total Products", f"{len(df_filtered):,}")
+        st.metric("Total Products", f"{len(df_filtered):,}")
     with col2:
         st.metric("✅ Valid GTINs", f"{total_valid:,}", f"{compliance_rate:.1f}%")
     with col3:
         st.metric("❌ Invalid GTINs", f"{total_invalid:,}", f"{invalid_rate:.1f}%")
     with col4:
-        st.metric("⚠️ Generic GTINs", f"{total_generic:,}")
+        st.metric("Generic GTINs", f"{total_generic:,}")
     with col5:
-        st.metric("🚫 Placeholder GTINs (999...99)", f"{total_blocked:,}")
+        st.metric("Placeholder GTINs (999...99)", f"{total_blocked:,}")
     with col6:
-        st.metric("📊 Breakdown", f"{total_8}/{total_13}/{total_14}", help="8 digits / 13 digits / 14 digits")
+        st.metric("Breakdown", f"{total_8}/{total_13}/{total_14}", help="8 digits / 13 digits / 14 digits")
     with col7:
         if brand_col is not None:
-            st.metric("⚠️ Generics (Brand ≠ EUPCKER)", f"{total_generics_non_eupcker:,}", help="Generic GTINs where Brand is not EUPCKER")
+            st.metric("Generics (Brand ≠ EUPCKER)", f"{total_generics_non_eupcker:,}", help="Generic GTINs where Brand is not EUPCKER")
         else:
-            st.metric("⚠️ Generics (Brand ≠ EUPCKER)", "N/A", help="Column Brand not found")
+            st.metric("Generics (Brand ≠ EUPCKER)", "N/A", help="Column Brand not found")
     
     # Handle save button click (button is at the top, but logic is here after data is loaded)
     if st.session_state.get("save_quality_requested", False):
@@ -645,12 +645,12 @@ def main():
         }
         
         if save_tracker_data(tracker_entry):
-            st.success("✅ Analysis saved to tracker successfully!")
+            st.success("Analysis saved to tracker successfully!")
         else:
-            st.error("❌ Error saving analysis to tracker")
+            st.error("Error saving analysis to tracker")
     
     # Analysis by Legal Entity
-    st.markdown('<div class="section-header">🏢 Analysis by Legal Entity</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">Analysis by Legal Entity</div>', unsafe_allow_html=True)
     
     # Create analysis dataframe
     analysis_data = []
@@ -706,11 +706,13 @@ def main():
         height=400
     )
     
+    st.markdown('<div style="margin-top: 2rem;"></div>', unsafe_allow_html=True)
+    
     # Charts
     if len(selected_entities) > 1:
         col1, col2 = st.columns(2)
         with col1:
-            st.markdown("#### 📊 Compliance Rate by Legal Entity")
+            st.markdown("#### Compliance Rate by Legal Entity")
             fig_compliance = px.bar(
                 analysis_df.sort_values("Compliance Rate (%)", ascending=True),
                 x="Compliance Rate (%)",
@@ -725,7 +727,7 @@ def main():
             fig_compliance.update_layout(height=450, showlegend=False, template='plotly_dark', plot_bgcolor='#1e293b', paper_bgcolor='#0f172a', font=dict(size=12, color='#f1f5f9'), xaxis=dict(gridcolor='#334155', gridwidth=1), yaxis=dict(showgrid=False))
             st.plotly_chart(fig_compliance, use_container_width=True)
         with col2:
-            st.markdown("#### 📈 GTIN Status Distribution")
+            st.markdown("#### GTIN Status Distribution")
             status_summary = df_filtered["gtin_status"].value_counts().reset_index()
             status_summary.columns = ["Status", "Count"]
             fig_pie = px.pie(status_summary, values="Count", names="Status", hole=0.4, color_discrete_sequence=px.colors.qualitative.Set3)
@@ -733,7 +735,7 @@ def main():
             fig_pie.update_layout(height=450, template='plotly_dark', plot_bgcolor='#1e293b', paper_bgcolor='#0f172a', font=dict(size=12, color='#f1f5f9'), showlegend=True, legend=dict(orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.1, font=dict(color='#f1f5f9', size=11), bgcolor='rgba(30, 41, 59, 0.8)', bordercolor='#334155', borderwidth=1))
             st.plotly_chart(fig_pie, use_container_width=True)
     else:
-        st.markdown("#### 📈 GTIN Status Distribution")
+        st.markdown("#### GTIN Status Distribution")
         status_summary = df_filtered["gtin_status"].value_counts().reset_index()
         status_summary.columns = ["Status", "Count"]
         fig_pie = px.pie(status_summary, values="Count", names="Status", hole=0.4, color_discrete_sequence=px.colors.qualitative.Set3)
@@ -742,7 +744,7 @@ def main():
         st.plotly_chart(fig_pie, use_container_width=True)
     
     if len(selected_entities) > 1:
-        st.markdown('<div class="section-header">📊 Status Details by Legal Entity</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-header">Status Details by Legal Entity</div>', unsafe_allow_html=True)
         status_cols = ["Valid GTINs", "Invalid GTINs", "Generic GTINs", "Placeholder GTINs (999...99)"]
         chart_data = analysis_df[["Legal Entity"] + status_cols].copy()
         chart_data = chart_data.sort_values("Legal Entity")
@@ -754,11 +756,11 @@ def main():
         st.plotly_chart(fig_stacked, use_container_width=True)
     
     # Generics with Brand != EUPCKER
-    st.markdown('<div class="section-header">⚠️ Generics with Brand ≠ EUPCKER</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">Generics with Brand ≠ EUPCKER</div>', unsafe_allow_html=True)
     if brand_col is None:
         st.warning("Column **Brand** not found in the data. This analysis is not available.")
     elif len(generics_non_eupcker) == 0:
-        st.success("✅ No Generic GTINs with Brand ≠ EUPCKER.")
+        st.success("No Generic GTINs with Brand ≠ EUPCKER.")
     else:
         st.markdown(f"*Generic GTINs where Brand is not EUPCKER: **{total_generics_non_eupcker:,}** records.*")
         by_ent = generics_non_eupcker.groupby("Legal Entity").size().reset_index(name="Generics (Brand ≠ EUPCKER)")
@@ -776,7 +778,7 @@ def main():
         st.dataframe(generics_non_eupcker[pc].head(20), use_container_width=True, hide_index=True)
     
     # Detailed status breakdown
-    st.markdown('<div class="section-header">🔍 Detailed Status Breakdown</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">Detailed Status Breakdown</div>', unsafe_allow_html=True)
     
     selected_entity_detail = st.selectbox(
         "**Select a Legal Entity for detailed analysis**",
@@ -827,7 +829,7 @@ def main():
     st.markdown("---")
     st.markdown(
         f"<div class='footer' style='text-align: center; color: #cbd5e1;'>"
-        f"📅 Report generated on {date.today().strftime('%B %d, %Y')} | "
+        f"Report generated on {date.today().strftime('%B %d, %Y')} | "
         f"Total: <strong style='color: #94a3b8;'>{total_rows:,}</strong> products analyzed"
         f"</div>",
         unsafe_allow_html=True
