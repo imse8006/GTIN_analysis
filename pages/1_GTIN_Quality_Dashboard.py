@@ -72,6 +72,7 @@ st.markdown("""
         border-radius: 0.5rem;
         box-shadow: 0 2px 8px rgba(0,0,0,0.3);
         border: 1px solid #334155;
+        min-height: 8rem;
     }
     .stMetric label {
         font-size: 0.9rem;
@@ -82,6 +83,11 @@ st.markdown("""
         font-size: 2rem;
         font-weight: 700;
         color: #f1f5f9;
+    }
+    /* Overview 7 metrics: equal column width */
+    div[data-testid="stHorizontalBlock"]:has(> div:nth-of-type(7)) > div {
+        flex: 1 1 0 !important;
+        min-width: 0 !important;
     }
     /* Breakdown (8/13/14): smaller font to avoid truncation */
     div[data-testid="stHorizontalBlock"]:has(> div:nth-of-type(7)) > div:nth-of-type(6) [data-testid="stMetricValue"] {
