@@ -478,7 +478,11 @@ def main():
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
     
-    search_query = st.text_input("🔍 Search SUPC or GTIN", placeholder="e.g. 12345 or 08701234567890", key="search_supc_gtin")
+    col_search, col_scope = st.columns([3, 1])
+    with col_search:
+        search_query = st.text_input("🔍 Search SUPC or GTIN", placeholder="e.g. 12345 or 08701234567890", key="search_supc_gtin")
+    with col_scope:
+        search_scope = st.selectbox("Search in", ["SUPC only", "GTIN only", "SUPC and GTIN"], index=0, key="search_scope_quality", help="SUPC only: exact product. GTIN only: by code. Both: can mix matches.")
     
     st.markdown('</div>', unsafe_allow_html=True)
     
@@ -533,11 +537,12 @@ def main():
     if search_query and str(search_query).strip():
         q = str(search_query).strip()
         parts = []
-        if "SUPC" in df_filtered.columns:
+        if search_scope in ("SUPC only", "SUPC and GTIN") and "SUPC" in df_filtered.columns:
             parts.append(df_filtered["SUPC"].astype(str).str.contains(q, case=False, regex=False, na=False))
-        parts.append(df_filtered[gtin_col].astype(str).str.contains(q, case=False, regex=False, na=False))
-        if "gtin_outer_normalized" in df_filtered.columns:
-            parts.append(df_filtered["gtin_outer_normalized"].astype(str).str.contains(q, case=False, regex=False, na=False))
+        if search_scope in ("GTIN only", "SUPC and GTIN"):
+            parts.append(df_filtered[gtin_col].astype(str).str.contains(q, case=False, regex=False, na=False))
+            if "gtin_outer_normalized" in df_filtered.columns:
+                parts.append(df_filtered["gtin_outer_normalized"].astype(str).str.contains(q, case=False, regex=False, na=False))
         if parts:
             mask = parts[0]
             for p in parts[1:]:
