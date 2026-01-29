@@ -506,6 +506,7 @@ def analyze_inner_equals_outer(df, gtin_outer_col, gtin_inner_col):
     """
     Detect GTIN Inner that equal a GTIN Outer (excluding Generics).
     Two sub-analyses: same Legal Entity, and different Legal Entities.
+    Vectorized: no iterrows(), use set lookup + merge.
     """
     if not gtin_inner_col or gtin_inner_col not in df.columns or "gtin_inner_normalized" not in df.columns:
         return {
@@ -531,16 +532,25 @@ def analyze_inner_equals_outer(df, gtin_outer_col, gtin_inner_col):
             "has_inner": True,
         }
 
-    same_flags = []
-    other_flags = []
-    for idx, row in with_inner.iterrows():
-        inner_val = row["gtin_inner_normalized"]
-        le = row["Legal Entity"]
-        matches = outer_entities[outer_entities["gtin_outer_normalized"] == inner_val]
-        same_flags.append((matches["Legal Entity"] == le).any())
-        other_flags.append((matches["Legal Entity"] != le).any())
-    with_inner["_inner_eq_outer_same"] = same_flags
-    with_inner["_inner_eq_outer_other"] = other_flags
+    # Same entity: (inner_gtin, Legal Entity) exists in outer (non-Generic)
+    same_set = set(zip(outer_entities["gtin_outer_normalized"], outer_entities["Legal Entity"]))
+    with_inner["_key"] = list(zip(with_inner["gtin_inner_normalized"], with_inner["Legal Entity"]))
+    with_inner["_inner_eq_outer_same"] = with_inner["_key"].isin(same_set)
+
+    # Other entity: inner_gtin appears as outer in a different Legal Entity
+    with_inner["_idx"] = range(len(with_inner))
+    merged = with_inner[["_idx", "gtin_inner_normalized", "Legal Entity"]].merge(
+        outer_entities,
+        left_on="gtin_inner_normalized",
+        right_on="gtin_outer_normalized",
+        how="left",
+        suffixes=("", "_outer"),
+    )
+    merged["_other"] = merged["Legal Entity_outer"].notna() & (merged["Legal Entity"] != merged["Legal Entity_outer"])
+    other_by_idx = merged.groupby("_idx")["_other"].any()
+    with_inner["_inner_eq_outer_other"] = with_inner["_idx"].map(other_by_idx).fillna(False)
+
+    with_inner = with_inner.drop(columns=["_key", "_idx"], errors="ignore")
 
     same_entity_df = with_inner[with_inner["_inner_eq_outer_same"]].drop(
         columns=["_inner_eq_outer_same", "_inner_eq_outer_other", "_outer_status"], errors="ignore"
