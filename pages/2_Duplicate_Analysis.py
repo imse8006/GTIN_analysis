@@ -10,6 +10,7 @@ from collections import Counter
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
+from export_utils import to_excel_bytes
 
 # Import GTIN classification functions
 try:
@@ -902,6 +903,7 @@ def main():
                 if cross_summary:
                     cross_summary_df = pd.DataFrame(cross_summary)
                     st.dataframe(cross_summary_df, use_container_width=True, hide_index=True)
+                    st.download_button("Download as Excel", data=to_excel_bytes(cross_summary_df), file_name="cross_duplicates_summary.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_cross_summary")
                 
                 # Detailed view
                 with st.expander("View All Cross Duplicate Records"):
@@ -947,6 +949,7 @@ def main():
             
             st.markdown(f"**Found {duplicate_results['outer']['unique_duplicated_gtins']} unique GTINs with duplicates**")
             st.dataframe(outer_summary, use_container_width=True, hide_index=True)
+            st.download_button("Download as Excel", data=to_excel_bytes(outer_summary), file_name="outer_duplicates_summary.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_outer_summary")
             
             # Detailed view
             with st.expander("View All Duplicate Records"):
@@ -990,6 +993,7 @@ def main():
                 
                 st.markdown(f"**Found {duplicate_results['inner']['unique_duplicated_gtins']} unique GTINs with duplicates**")
                 st.dataframe(inner_summary, use_container_width=True, hide_index=True)
+                st.download_button("Download as Excel", data=to_excel_bytes(inner_summary), file_name="inner_duplicates_summary.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_inner_summary")
                 
                 # Detailed view
                 with st.expander("View All Duplicate Records"):
@@ -1021,6 +1025,7 @@ def main():
                 st.markdown("##### 📋 Generic GTINs Duplicate Summary")
                 if len(generic_results["duplicate_summary"]) > 0:
                     st.dataframe(generic_results["duplicate_summary"], use_container_width=True, hide_index=True)
+                    st.download_button("Download as Excel", data=to_excel_bytes(generic_results["duplicate_summary"]), file_name="generic_duplicates_summary.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_generic_dup")
                     
                     # Chart: Duplicates by Entity Count
                     st.markdown("##### 📊 Distribution: How Many Entities Share Each Generic GTIN")
@@ -1042,6 +1047,7 @@ def main():
             st.markdown("##### 📊 Distribution by Legal Entity (All Generic GTINs)")
             if len(generic_results["by_entity"]) > 0:
                 st.dataframe(generic_results["by_entity"], use_container_width=True, hide_index=True)
+                st.download_button("Download as Excel", data=to_excel_bytes(generic_results["by_entity"]), file_name="generic_by_entity.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_generic_by_ent")
                 
                 # Chart
                 fig_generic = px.bar(
@@ -1085,6 +1091,7 @@ def main():
             st.markdown("##### 📊 Distribution by Legal Entity")
             if len(placeholder_results["by_entity"]) > 0:
                 st.dataframe(placeholder_results["by_entity"], use_container_width=True, hide_index=True)
+                st.download_button("Download as Excel", data=to_excel_bytes(placeholder_results["by_entity"]), file_name="placeholder_by_entity.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_placeholder_by_ent")
                 
                 # Chart
                 fig_placeholder = px.bar(
@@ -1129,6 +1136,7 @@ def main():
             st.markdown("##### 📊 Distribution by Legal Entity")
             if len(suspect_results["by_entity"]) > 0:
                 st.dataframe(suspect_results["by_entity"], use_container_width=True, hide_index=True)
+                st.download_button("Download as Excel", data=to_excel_bytes(suspect_results["by_entity"]), file_name="suspect_by_entity.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_suspect_by_ent")
                 
                 # Chart
                 fig_suspect = px.bar(
@@ -1215,6 +1223,7 @@ def main():
             st.markdown("##### 📋 Detailed GTIN Sharing Information")
             if len(valid_results["sharing_details"]) > 0:
                 st.dataframe(valid_results["sharing_details"].head(100), use_container_width=True, hide_index=True)
+                st.download_button("Download as Excel", data=to_excel_bytes(valid_results["sharing_details"]), file_name="valid_gtins_sharing.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_valid_sharing")
             
             # Summary statistics
             st.markdown("##### 📊 Summary Statistics")
@@ -1257,6 +1266,7 @@ def main():
                 ).reset_index()
                 by_ent = by_ent.sort_values("records", ascending=False)
                 st.dataframe(by_ent, use_container_width=True, hide_index=True)
+                st.download_button("Download as Excel", data=to_excel_bytes(same_df), file_name="inner_eq_outer_same_entity.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_inner_eq_same")
                 with st.expander("View records (Same Legal Entity)"):
                     disp = [c for c in ["Legal Entity", gtin_outer_col, gtin_inner_col, "gtin_outer_normalized", "gtin_inner_normalized", "SUPC", "Local Product Description"] if c in same_df.columns]
                     st.dataframe(same_df[disp], use_container_width=True, hide_index=True)
@@ -1273,6 +1283,7 @@ def main():
                 ).reset_index()
                 by_ent = by_ent.sort_values("records", ascending=False)
                 st.dataframe(by_ent, use_container_width=True, hide_index=True)
+                st.download_button("Download as Excel", data=to_excel_bytes(other_df), file_name="inner_eq_outer_other_entity.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_inner_eq_other")
                 with st.expander("View records (Different Legal Entities)"):
                     disp = [c for c in ["Legal Entity", gtin_outer_col, gtin_inner_col, "gtin_outer_normalized", "gtin_inner_normalized", "SUPC", "Local Product Description"] if c in other_df.columns]
                     st.dataframe(other_df[disp], use_container_width=True, hide_index=True)

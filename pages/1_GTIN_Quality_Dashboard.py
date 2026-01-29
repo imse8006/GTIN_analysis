@@ -207,6 +207,8 @@ st.markdown("""
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent))
+sys.path.append(str(Path(__file__).parent.parent))
+from export_utils import to_excel_bytes
 
 # Import necessary functions
 INPUT_FILE = "all-products-prod-2026-01-22_15.44.25.xlsx"
@@ -705,6 +707,13 @@ def main():
         use_container_width=True,
         height=400
     )
+    st.download_button(
+        "Download as Excel",
+        data=to_excel_bytes(display_df),
+        file_name="quality_analysis_by_legal_entity.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="dl_quality_analysis"
+    )
     
     st.markdown('<div style="margin-top: 2rem;"></div>', unsafe_allow_html=True)
     
@@ -769,6 +778,13 @@ def main():
         by_ent["% of Entity Generics"] = (by_ent["Generics (Brand ≠ EUPCKER)"] / by_ent["Total Generics"] * 100).round(2)
         by_ent = by_ent.sort_values("Generics (Brand ≠ EUPCKER)", ascending=False)
         st.dataframe(by_ent, use_container_width=True, hide_index=True)
+        st.download_button(
+            "Download as Excel",
+            data=to_excel_bytes(by_ent),
+            file_name="generics_brand_not_eupcker_by_entity.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="dl_generics_by_ent"
+        )
         if len(selected_entities) > 1:
             fig_ge = px.bar(by_ent, x="Legal Entity", y="Generics (Brand ≠ EUPCKER)", title="Generics (Brand ≠ EUPCKER) by Legal Entity", labels={"Generics (Brand ≠ EUPCKER)": "Count"})
             fig_ge.update_layout(template="plotly_dark", height=400, plot_bgcolor="#1e293b", paper_bgcolor="#0f172a", font=dict(color="#f1f5f9"))
@@ -824,6 +840,13 @@ def main():
             status_detail_display["Count"] = status_detail_display["Count"].apply(lambda x: f"{int(x):,}")
             status_detail_display["Percentage"] = status_detail_display["Percentage"].apply(lambda x: f"{x:.2f}%")
             st.dataframe(status_detail_display, use_container_width=True, hide_index=True)
+            st.download_button(
+                "Download as Excel",
+                data=to_excel_bytes(status_detail),
+                file_name="detailed_status_breakdown.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="dl_status_detail"
+            )
     
     # Footer
     st.markdown("---")

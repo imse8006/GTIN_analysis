@@ -16,6 +16,7 @@ st.set_page_config(
 )
 
 sys.path.append(str(Path(__file__).parent.parent))
+from export_utils import to_excel_bytes
 INPUT_FILE = "all-products-prod-2026-01-22_15.44.25.xlsx"
 
 # Generic GTIN set (same as other pages)
@@ -239,6 +240,7 @@ def main():
     ).reset_index()
     by_tax = by_tax.sort_values("records", ascending=False)
     st.dataframe(by_tax, use_container_width=True, hide_index=True)
+    st.download_button("Download as Excel", data=to_excel_bytes(by_tax), file_name="generic_by_taxonomy.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_by_tax")
 
     # By Generic GTIN (detail)
     st.markdown('<div class="section-header">By Generic GTIN</div>', unsafe_allow_html=True)
@@ -250,12 +252,14 @@ def main():
     by_gtin.columns = ["Generic GTIN", "LOV (taxonomy)", "Business Centres", "Records"]
     by_gtin = by_gtin.sort_values("Records", ascending=False)
     st.dataframe(by_gtin, use_container_width=True, hide_index=True)
+    st.download_button("Download as Excel", data=to_excel_bytes(by_gtin), file_name="generic_by_gtin.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_by_gtin")
 
     # By Legal Entity x taxonomy
     st.markdown('<div class="section-header">By Legal Entity and taxonomy</div>', unsafe_allow_html=True)
     by_ent_tax = generic_df.groupby(["Legal Entity", "taxonomy"]).size().reset_index(name="Records")
     pivot = by_ent_tax.pivot(index="Legal Entity", columns="taxonomy", values="Records").fillna(0).astype(int)
     st.dataframe(pivot, use_container_width=True, hide_index=True)
+    st.download_button("Download as Excel", data=to_excel_bytes(pivot.reset_index()), file_name="generic_by_entity_taxonomy.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_pivot")
 
     # Charts
     st.markdown('<div class="section-header">Charts</div>', unsafe_allow_html=True)
@@ -285,7 +289,9 @@ def main():
     # Sample records
     st.markdown('<div class="section-header">Sample Generic records</div>', unsafe_allow_html=True)
     sample_cols = [c for c in ["Legal Entity", "SUPC", "Local Product Description", "Brand", "gtin_outer_normalized", "taxonomy", "business_centres"] if c in generic_df.columns]
-    st.dataframe(generic_df[sample_cols].head(50), use_container_width=True, hide_index=True)
+    sample_df = generic_df[sample_cols].head(50)
+    st.dataframe(sample_df, use_container_width=True, hide_index=True)
+    st.download_button("Download as Excel", data=to_excel_bytes(sample_df), file_name="generic_sample_records.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_sample")
 
 
 if __name__ == "__main__":
