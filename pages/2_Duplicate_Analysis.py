@@ -501,6 +501,70 @@ def analyze_suspect_gtins(df, gtin_outer_col):
     }
 
 
+def analyze_inner_equals_outer(df, gtin_outer_col, gtin_inner_col):
+    """
+    Detect GTIN Inner that equal a GTIN Outer (excluding Generics).
+    Two sub-analyses: same Legal Entity, and different Legal Entities.
+    """
+    if not gtin_inner_col or gtin_inner_col not in df.columns or "gtin_inner_normalized" not in df.columns:
+        return {
+            "same_entity": {"total": 0, "unique_gtins": 0, "df": pd.DataFrame(), "gtin_list": []},
+            "other_entity": {"total": 0, "unique_gtins": 0, "df": pd.DataFrame(), "gtin_list": []},
+            "has_inner": False,
+        }
+    df = df.copy()
+    df["_outer_status"] = df["gtin_outer_normalized"].apply(
+        lambda x: classify_gtin_status(x) if x is not None else "MISSING"
+    )
+    non_generic = df[df["_outer_status"] != "GENERIC_GTIN"].dropna(subset=["gtin_outer_normalized"])
+    outer_entities = non_generic[["gtin_outer_normalized", "Legal Entity"]].drop_duplicates()
+
+    with_inner = df[
+        df["gtin_inner_normalized"].notna()
+        & (df["gtin_inner_normalized"].astype(str).str.strip() != "")
+    ].copy()
+    if len(with_inner) == 0:
+        return {
+            "same_entity": {"total": 0, "unique_gtins": 0, "df": pd.DataFrame(), "gtin_list": []},
+            "other_entity": {"total": 0, "unique_gtins": 0, "df": pd.DataFrame(), "gtin_list": []},
+            "has_inner": True,
+        }
+
+    same_flags = []
+    other_flags = []
+    for idx, row in with_inner.iterrows():
+        inner_val = row["gtin_inner_normalized"]
+        le = row["Legal Entity"]
+        matches = outer_entities[outer_entities["gtin_outer_normalized"] == inner_val]
+        same_flags.append((matches["Legal Entity"] == le).any())
+        other_flags.append((matches["Legal Entity"] != le).any())
+    with_inner["_inner_eq_outer_same"] = same_flags
+    with_inner["_inner_eq_outer_other"] = other_flags
+
+    same_entity_df = with_inner[with_inner["_inner_eq_outer_same"]].drop(
+        columns=["_inner_eq_outer_same", "_inner_eq_outer_other", "_outer_status"], errors="ignore"
+    )
+    other_entity_df = with_inner[with_inner["_inner_eq_outer_other"]].drop(
+        columns=["_inner_eq_outer_same", "_inner_eq_outer_other", "_outer_status"], errors="ignore"
+    )
+
+    return {
+        "same_entity": {
+            "total": len(same_entity_df),
+            "unique_gtins": same_entity_df["gtin_inner_normalized"].nunique() if len(same_entity_df) > 0 else 0,
+            "df": same_entity_df,
+            "gtin_list": same_entity_df["gtin_inner_normalized"].unique().tolist() if len(same_entity_df) > 0 else [],
+        },
+        "other_entity": {
+            "total": len(other_entity_df),
+            "unique_gtins": other_entity_df["gtin_inner_normalized"].nunique() if len(other_entity_df) > 0 else 0,
+            "df": other_entity_df,
+            "gtin_list": other_entity_df["gtin_inner_normalized"].unique().tolist() if len(other_entity_df) > 0 else [],
+        },
+        "has_inner": True,
+    }
+
+
 def analyze_valid_gtins_by_entity(df, gtin_outer_col):
     """Analyze valid GTINs and understand which Legal Entities share them."""
     # Classify GTINs
@@ -708,6 +772,9 @@ def main():
     with st.spinner("Analyzing Valid GTINs by Legal Entity..."):
         valid_results = analyze_valid_gtins_by_entity(df_filtered, gtin_outer_col)
     
+    with st.spinner("Analyzing Inner = Outer (non-Generic)..."):
+        inner_eq_outer_results = analyze_inner_equals_outer(df_filtered, gtin_outer_col, gtin_inner_col)
+    
     # Overview Metrics
     st.markdown('<div class="section-header">📊 Overview</div>', unsafe_allow_html=True)
     
@@ -784,14 +851,15 @@ def main():
     st.markdown('<div class="section-header">📋 Detailed Analysis</div>', unsafe_allow_html=True)
     
     # Tabs for different analysis types
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
-        "🔄 Cross Duplicates", 
-        "📦 GTIN Outer Duplicates", 
-        "📦 GTIN Inner Duplicates",
-        "⚠️ Generic GTINs",
-        "🚫 Placeholder GTINs",
-        "🔍 Suspect GTINs",
-        "✅ Valid GTINs by Entity"
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+        "Cross Duplicates", 
+        "GTIN Outer Duplicates", 
+        "GTIN Inner Duplicates",
+        "Generic GTINs",
+        "Placeholder GTINs",
+        "Suspect GTINs",
+        "Valid GTINs by Entity",
+        "Inner = Outer (non-Generic)"
     ])
     
     # Tab 1: Cross Duplicates (moved to first position as it's most interesting)
@@ -1161,6 +1229,55 @@ def main():
                 st.metric("Entity Pairs Sharing", f"{len(valid_results['entity_sharing']):,}")
         else:
             st.info("ℹ️ No valid GTINs found in the data.")
+    
+    # Tab 8: Inner = Outer (non-Generic)
+    with tab8:
+        st.markdown("#### Inner = Outer (non-Generic)")
+        st.markdown("*GTIN Inner that equal a GTIN Outer somewhere, excluding Generic Outers. Two sub-analyses: same Legal Entity vs different Legal Entities.*")
+        
+        if not inner_eq_outer_results["has_inner"]:
+            st.info("GTIN Inner column not found. This analysis requires both Outer and Inner columns.")
+        else:
+            same = inner_eq_outer_results["same_entity"]
+            other = inner_eq_outer_results["other_entity"]
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Same Legal Entity", f"{same['total']:,}", f"{same['unique_gtins']:,} unique GTINs")
+            with col2:
+                st.metric("Different Legal Entities", f"{other['total']:,}", f"{other['unique_gtins']:,} unique GTINs")
+            
+            st.markdown("##### Same Legal Entity")
+            st.markdown("*Records where this row's GTIN Inner equals a GTIN Outer (non-Generic) in the **same** Legal Entity.*")
+            if same["total"] > 0:
+                same_df = same["df"]
+                by_ent = same_df.groupby("Legal Entity").agg(
+                    records=("gtin_inner_normalized", "count"),
+                    unique_gtins=("gtin_inner_normalized", "nunique")
+                ).reset_index()
+                by_ent = by_ent.sort_values("records", ascending=False)
+                st.dataframe(by_ent, use_container_width=True, hide_index=True)
+                with st.expander("View records (Same Legal Entity)"):
+                    disp = [c for c in ["Legal Entity", gtin_outer_col, gtin_inner_col, "gtin_outer_normalized", "gtin_inner_normalized", "SUPC", "Local Product Description"] if c in same_df.columns]
+                    st.dataframe(same_df[disp], use_container_width=True, hide_index=True)
+            else:
+                st.success("No records where Inner = Outer (non-Generic) within the same Legal Entity.")
+            
+            st.markdown("##### Different Legal Entities")
+            st.markdown("*Records where this row's GTIN Inner equals a GTIN Outer (non-Generic) in a **different** Legal Entity.*")
+            if other["total"] > 0:
+                other_df = other["df"]
+                by_ent = other_df.groupby("Legal Entity").agg(
+                    records=("gtin_inner_normalized", "count"),
+                    unique_gtins=("gtin_inner_normalized", "nunique")
+                ).reset_index()
+                by_ent = by_ent.sort_values("records", ascending=False)
+                st.dataframe(by_ent, use_container_width=True, hide_index=True)
+                with st.expander("View records (Different Legal Entities)"):
+                    disp = [c for c in ["Legal Entity", gtin_outer_col, gtin_inner_col, "gtin_outer_normalized", "gtin_inner_normalized", "SUPC", "Local Product Description"] if c in other_df.columns]
+                    st.dataframe(other_df[disp], use_container_width=True, hide_index=True)
+            else:
+                st.success("No records where Inner = Outer (non-Generic) across different Legal Entities.")
     
     # Footer
     st.markdown("---")
