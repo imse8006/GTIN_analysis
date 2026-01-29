@@ -1,6 +1,7 @@
 """
-Generic GTIN Analysis page: analyze GENERIC GTINs by their exact number (taxonomy / LOV mapping).
-Filter by Legal Entity. Mapping: Generic GTIN -> LOV Value in MDD (Business Centre).
+Generic GTIN Analysis page: check if Generic GTINs CORRESPOND to the taxonomy.
+Taxonomy = first part of "OSD Classification" (before first dash), e.g. "BEEF" from "BEEF-YYYY-ZZZZ".
+Compare product's Generic GTIN to the expected Generic for that taxonomy (mapping).
 """
 import pandas as pd
 import streamlit as st
@@ -27,19 +28,24 @@ GENERIC_GTINS = {
 EXPLICIT_BLOCKED = "99999999999999"
 VALID_LENGTHS = {8, 13, 14}
 
-# Mapping: Generic GTIN (14 digits) -> LOV Value in MDD (taxonomy). From Business Centre mapping.
-# Business Centres using the same GTIN share the same LOV (e.g. BEEF, PORK, POULTRY -> Butchery).
+# Mapping: Generic GTIN (14 digits) -> LOV + Business Centres (taxonomy). From MDD.
 GENERIC_GTIN_TAXONOMY = {
     "10000000000009": {"lov": "Butchery", "business_centres": ["BEEF", "PORK", "POULTRY"]},
     "30000000000009": {"lov": "Equipment", "business_centres": ["SUPPLIES & EQUIPMENT"]},
     "40000000000009": {"lov": "Fishmongery", "business_centres": ["SEAFOOD"]},
     "70000000000009": {"lov": "Produce", "business_centres": ["PRODUCE"]},
-    # 20000000000009, 50000000000009, 60000000000009, 80000000000009: not in MDD mapping
     "20000000000009": {"lov": "Not in MDD", "business_centres": []},
     "50000000000009": {"lov": "Not in MDD", "business_centres": []},
     "60000000000009": {"lov": "Not in MDD", "business_centres": []},
     "80000000000009": {"lov": "Not in MDD", "business_centres": []},
 }
+
+# Expected Generic GTIN per taxonomy (OSD prefix = part before first dash in "OSD Classification")
+# Keys normalized to uppercase for lookup (OSD can be "BEEF" or "Beef")
+EXPECTED_GTIN_BY_TAXONOMY = {}
+for gtin_14, info in GENERIC_GTIN_TAXONOMY.items():
+    for bc in info["business_centres"]:
+        EXPECTED_GTIN_BY_TAXONOMY[bc.upper()] = gtin_14
 
 
 def normalize_gtin(value):
@@ -132,6 +138,16 @@ def load_and_classify_data():
     df["business_centres"] = df["gtin_14"].map(
         lambda x: ", ".join(GENERIC_GTIN_TAXONOMY.get(x, {}).get("business_centres", [])) if x else ""
     )
+    # OSD Classification: extract taxonomy prefix (before first dash), e.g. "BEEF" from "BEEF-YYYY-ZZZZ"
+    osd_col = None
+    for col in df.columns:
+        if str(col).strip().upper() == "OSD CLASSIFICATION":
+            osd_col = col
+            break
+    if osd_col is None:
+        df["osd_prefix"] = ""
+    else:
+        df["osd_prefix"] = df[osd_col].fillna("").astype(str).str.strip().str.split("-").str[0].str.strip()
     return df, gtin_col
 
 
@@ -222,76 +238,78 @@ def main():
         st.info("No Generic GTINs in the selected Legal Entities.")
         return
 
-    # Overview metrics
-    st.markdown('<div class="section-header">Overview</div>', unsafe_allow_html=True)
-    col1, col2, col3 = st.columns(3)
+    # Expected Generic per OSD prefix (taxonomy = part before first dash in OSD Classification)
+    generic_df["expected_gtin"] = generic_df["osd_prefix"].apply(
+        lambda x: EXPECTED_GTIN_BY_TAXONOMY.get(str(x).strip().upper()) if pd.notna(x) and str(x).strip() else None
+    )
+    generic_df["conforming"] = generic_df["expected_gtin"].notna() & (generic_df["gtin_14"] == generic_df["expected_gtin"])
+    conforming_count = generic_df["conforming"].sum()
+    non_conforming_count = len(generic_df) - conforming_count
+    conforming_pct = (conforming_count / len(generic_df) * 100) if len(generic_df) > 0 else 0
+
+    # Overview: conformity check
+    st.markdown('<div class="section-header">Conformity: Generic GTIN vs taxonomy (OSD prefix)</div>', unsafe_allow_html=True)
+    st.markdown("*Taxonomy = first part of **OSD Classification** (before first dash). Check: does the product's Generic GTIN match the expected one for that taxonomy?*")
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric("Total Generic records", f"{len(generic_df):,}")
     with col2:
-        st.metric("Unique Generic GTINs", f"{generic_df['gtin_14'].nunique():,}")
+        st.metric("Conforming", f"{conforming_count:,}", f"{conforming_pct:.1f}%")
     with col3:
-        st.metric("Taxonomies (LOV)", f"{generic_df['taxonomy'].nunique():,}")
+        st.metric("Non-conforming", f"{non_conforming_count:,}", f"{100 - conforming_pct:.1f}%")
+    with col4:
+        st.metric("No mapping (OSD prefix)", f"{(generic_df['expected_gtin'].isna()).sum():,}", help="OSD prefix not in mapping (e.g. GROCERY, BAKERY)")
 
-    # By taxonomy (LOV)
-    st.markdown('<div class="section-header">By taxonomy (LOV Value in MDD)</div>', unsafe_allow_html=True)
-    by_tax = generic_df.groupby("taxonomy").agg(
-        records=("gtin_14", "count"),
-        unique_gtins=("gtin_14", "nunique")
+    # Non-conforming records (wrong Generic for this taxonomy)
+    st.markdown('<div class="section-header">Non-conforming records</div>', unsafe_allow_html=True)
+    non_conforming_df = generic_df[~generic_df["conforming"]].copy()
+    if len(non_conforming_df) > 0:
+        display_nc = non_conforming_df[["Legal Entity", "osd_prefix", "gtin_14", "expected_gtin", "taxonomy"]].copy()
+        display_nc.columns = ["Legal Entity", "OSD prefix (taxonomy)", "Generic used", "Expected Generic", "LOV of used GTIN"]
+        display_nc["Expected Generic"] = display_nc["Expected Generic"].fillna("— (no mapping)")
+        st.dataframe(display_nc, use_container_width=True, hide_index=True)
+        st.download_button("Download as Excel", data=to_excel_bytes(display_nc), file_name="generic_non_conforming.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_non_conforming")
+        with st.expander("View full non-conforming records (all columns)"):
+            osd_col = next((c for c in df.columns if str(c).strip().upper() == "OSD CLASSIFICATION"), None)
+            full_cols = [c for c in ["Legal Entity", "osd_prefix", "gtin_14", "expected_gtin", "SUPC", "Local Product Description", "Brand"] if c in non_conforming_df.columns]
+            if osd_col and osd_col not in full_cols:
+                full_cols.insert(2, osd_col)
+            st.dataframe(non_conforming_df[full_cols], use_container_width=True, hide_index=True)
+    else:
+        st.success("All Generic GTINs conform to the taxonomy (OSD prefix) mapping.")
+
+    # By Legal Entity: conforming rate
+    st.markdown('<div class="section-header">Conformity by Legal Entity</div>', unsafe_allow_html=True)
+    by_ent = generic_df.groupby("Legal Entity").agg(
+        total=("gtin_14", "count"),
+        conforming=("conforming", "sum")
     ).reset_index()
-    by_tax = by_tax.sort_values("records", ascending=False)
-    st.dataframe(by_tax, use_container_width=True, hide_index=True)
-    st.download_button("Download as Excel", data=to_excel_bytes(by_tax), file_name="generic_by_taxonomy.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_by_tax")
+    by_ent["non_conforming"] = by_ent["total"] - by_ent["conforming"]
+    by_ent["conforming_%"] = (by_ent["conforming"] / by_ent["total"] * 100).round(1)
+    by_ent = by_ent.sort_values("non_conforming", ascending=False)
+    st.dataframe(by_ent, use_container_width=True, hide_index=True)
+    st.download_button("Download as Excel", data=to_excel_bytes(by_ent), file_name="generic_conformity_by_entity.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_by_ent")
 
-    # By Generic GTIN (detail)
-    st.markdown('<div class="section-header">By Generic GTIN</div>', unsafe_allow_html=True)
-    by_gtin = generic_df.groupby("gtin_14").agg(
-        taxonomy=("taxonomy", "first"),
-        business_centres=("business_centres", "first"),
-        records=("gtin_14", "count")
-    ).reset_index()
-    by_gtin.columns = ["Generic GTIN", "LOV (taxonomy)", "Business Centres", "Records"]
-    by_gtin = by_gtin.sort_values("Records", ascending=False)
-    st.dataframe(by_gtin, use_container_width=True, hide_index=True)
-    st.download_button("Download as Excel", data=to_excel_bytes(by_gtin), file_name="generic_by_gtin.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_by_gtin")
+    # Chart: conforming vs non-conforming by Legal Entity
+    if len(by_ent) > 0:
+        st.markdown("#### Conforming vs non-conforming by Legal Entity")
+        fig = px.bar(by_ent, x="Legal Entity", y=["conforming", "non_conforming"], title="Generic GTIN conformity by Legal Entity", barmode="stack", labels={"value": "Records", "variable": ""}, color_discrete_sequence=["#2ecc71", "#e74c3c"])
+        fig.update_layout(template="plotly_dark", height=400, plot_bgcolor="#1e293b", paper_bgcolor="#0f172a", font=dict(color="#f1f5f9"))
+        st.plotly_chart(fig, use_container_width=True)
 
-    # By Legal Entity x taxonomy
-    st.markdown('<div class="section-header">By Legal Entity and taxonomy</div>', unsafe_allow_html=True)
-    by_ent_tax = generic_df.groupby(["Legal Entity", "taxonomy"]).size().reset_index(name="Records")
-    pivot = by_ent_tax.pivot(index="Legal Entity", columns="taxonomy", values="Records").fillna(0).astype(int)
-    st.dataframe(pivot, use_container_width=True, hide_index=True)
-    st.download_button("Download as Excel", data=to_excel_bytes(pivot.reset_index()), file_name="generic_by_entity_taxonomy.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_pivot")
-
-    # Charts
-    st.markdown('<div class="section-header">Charts</div>', unsafe_allow_html=True)
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("#### Records by taxonomy")
-        fig_tax = px.bar(by_tax, x="taxonomy", y="records", labels={"taxonomy": "LOV (taxonomy)", "records": "Records"})
-        fig_tax.update_layout(template="plotly_dark", height=400, plot_bgcolor="#1e293b", paper_bgcolor="#0f172a", font=dict(color="#f1f5f9"))
-        st.plotly_chart(fig_tax, use_container_width=True)
-    with col2:
-        st.markdown("#### Records by Generic GTIN")
-        fig_gtin = px.bar(by_gtin, x="Generic GTIN", y="Records", color="LOV (taxonomy)")
-        fig_gtin.update_layout(template="plotly_dark", height=400, plot_bgcolor="#1e293b", paper_bgcolor="#0f172a", font=dict(color="#f1f5f9"))
-        st.plotly_chart(fig_gtin, use_container_width=True)
-
-    # Mapping reference
-    with st.expander("Mapping reference (Generic GTIN → LOV / Business Centre)"):
+    # Mapping reference (OSD prefix → Expected Generic)
+    with st.expander("Mapping reference (OSD prefix / taxonomy → Expected Generic GTIN)"):
         ref = []
-        for gtin, info in GENERIC_GTIN_TAXONOMY.items():
-            ref.append({
-                "Generic GTIN": gtin,
-                "LOV (MDD)": info["lov"],
-                "Business Centres": ", ".join(info["business_centres"]) if info["business_centres"] else "—"
-            })
+        for bc, gtin in sorted(EXPECTED_GTIN_BY_TAXONOMY.items()):
+            ref.append({"OSD prefix (taxonomy)": bc, "Expected Generic GTIN": gtin, "LOV": GENERIC_GTIN_TAXONOMY.get(gtin, {}).get("lov", "")})
         st.dataframe(pd.DataFrame(ref), use_container_width=True, hide_index=True)
 
-    # Sample records
-    st.markdown('<div class="section-header">Sample Generic records</div>', unsafe_allow_html=True)
-    sample_cols = [c for c in ["Legal Entity", "SUPC", "Local Product Description", "Brand", "gtin_outer_normalized", "taxonomy", "business_centres"] if c in generic_df.columns]
+    # Sample of all Generic records (with conformity)
+    st.markdown('<div class="section-header">Sample Generic records (with conformity)</div>', unsafe_allow_html=True)
+    sample_cols = [c for c in ["Legal Entity", "osd_prefix", "gtin_14", "expected_gtin", "conforming", "SUPC", "Local Product Description"] if c in generic_df.columns]
     sample_df = generic_df[sample_cols].head(50)
     st.dataframe(sample_df, use_container_width=True, hide_index=True)
-    st.download_button("Download as Excel", data=to_excel_bytes(sample_df), file_name="generic_sample_records.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_sample")
+    st.download_button("Download as Excel (all records)", data=to_excel_bytes(generic_df[sample_cols]), file_name="generic_all_records_with_conformity.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_sample")
 
 
 if __name__ == "__main__":

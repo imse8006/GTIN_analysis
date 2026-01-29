@@ -792,6 +792,13 @@ def main():
         st.markdown("##### Sample (first 20)")
         pc = [c for c in ["Legal Entity", "SUPC", "Local Product Description", brand_col, "OSD Classification", "gtin_outer_normalized"] if c in generics_non_eupcker.columns]
         st.dataframe(generics_non_eupcker[pc].head(20), use_container_width=True, hide_index=True)
+        st.download_button(
+            "Download as Excel (all records)",
+            data=to_excel_bytes(generics_non_eupcker[pc]),
+            file_name="generics_brand_not_eupcker_all.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="dl_generics_non_eupcker_all"
+        )
     
     # Detailed status breakdown
     st.markdown('<div class="section-header">Detailed Status Breakdown</div>', unsafe_allow_html=True)

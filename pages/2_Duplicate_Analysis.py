@@ -1153,6 +1153,7 @@ def main():
             st.markdown("##### 📋 Sample Suspect GTINs")
             suspect_list_df = pd.DataFrame({"Suspect GTIN": suspect_results["gtin_list"][:50]})
             st.dataframe(suspect_list_df, use_container_width=True, hide_index=True)
+            st.download_button("Download as Excel (all Suspect GTINs)", data=to_excel_bytes(pd.DataFrame({"Suspect GTIN": suspect_results["gtin_list"]})), file_name="suspect_gtins_all.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_suspect_gtins_all")
             
             # Detailed view
             with st.expander("View All Suspect GTIN Records"):
@@ -1164,6 +1165,7 @@ def main():
                 
                 available_cols = [col for col in display_cols if col in suspect_results["full_df"].columns]
                 st.dataframe(suspect_results["full_df"][available_cols], use_container_width=True, hide_index=True)
+                st.download_button("Download as Excel (all records)", data=to_excel_bytes(suspect_results["full_df"][available_cols]), file_name="suspect_records_all.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_suspect_records_all")
         else:
             st.success("✅ No Suspect GTINs found!")
     
@@ -1179,6 +1181,7 @@ def main():
             if len(valid_results["shared_gtins"]) > 0:
                 st.markdown(f"**{len(valid_results['shared_gtins'])} GTINs are shared across multiple entities**")
                 st.dataframe(valid_results["shared_gtins"].head(50), use_container_width=True, hide_index=True)
+                st.download_button("Download as Excel (all)", data=to_excel_bytes(valid_results["shared_gtins"]), file_name="valid_shared_gtins_all.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_shared_gtins_all")
                 
                 # Chart: Distribution of sharing
                 sharing_dist = valid_results["shared_gtins"]["Entity Count"].value_counts().sort_index()
@@ -1196,6 +1199,7 @@ def main():
             if len(valid_results["entity_sharing"]) > 0:
                 st.markdown("**Top Entity Pairs Sharing GTINs:**")
                 st.dataframe(valid_results["entity_sharing"].head(30), use_container_width=True, hide_index=True)
+                st.download_button("Download as Excel (all)", data=to_excel_bytes(valid_results["entity_sharing"]), file_name="valid_entity_sharing_all.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_entity_sharing_all")
                 
                 # Heatmap visualization (if not too many entities)
                 if len(valid_results["entity_sharing"]) > 0 and len(valid_results["entity_sharing"]) < 200:
@@ -1223,7 +1227,7 @@ def main():
             st.markdown("##### 📋 Detailed GTIN Sharing Information")
             if len(valid_results["sharing_details"]) > 0:
                 st.dataframe(valid_results["sharing_details"].head(100), use_container_width=True, hide_index=True)
-                st.download_button("Download as Excel", data=to_excel_bytes(valid_results["sharing_details"]), file_name="valid_gtins_sharing.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_valid_sharing")
+                st.download_button("Download as Excel (all)", data=to_excel_bytes(valid_results["sharing_details"]), file_name="valid_gtins_sharing_all.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_valid_sharing")
             
             # Summary statistics
             st.markdown("##### 📊 Summary Statistics")
