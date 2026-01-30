@@ -6,42 +6,49 @@ from openpyxl.styles import PatternFill
 
 
 def _build_inner_outer_paired_df(inner_df, full_df, same_entity):
-    """Build a DataFrame with INNER/OUTER rows paired by Match_Group (index-based, no iterrows)."""
+    """Build a DataFrame with INNER/OUTER rows paired by Match_Group. Optimized for large dfs: one groupby pass, one concat."""
     if inner_df is None or inner_df.empty:
         return pd.DataFrame()
     full_df = full_df.copy()
     full_df["_outer_key"] = full_df["gtin_outer_normalized"].astype(str).str.strip()
     data_cols = [c for c in inner_df.columns if c in full_df.columns]
-    # Index: (key,) or (key, entity) -> iloc positions of rows in full_df
+    # Build key -> list of indices in one pass (no get_group per key)
     if same_entity:
-        gb = full_df.groupby(["_outer_key", "Legal Entity"], dropna=False)
-        key_to_indices = {k: gb.get_group(k).index.tolist() for k in gb.groups}
+        key_to_indices = {}
+        for k, g in full_df.groupby(["_outer_key", "Legal Entity"], dropna=False):
+            key_to_indices[k] = g.index.tolist()
     else:
-        gb = full_df.groupby("_outer_key", dropna=False)
-        key_to_indices = {k: gb.get_group(k).index.tolist() for k in gb.groups}
-    blocks = []
-    inner_keys = inner_df["gtin_inner_normalized"].astype(str).str.strip()
-    entities = inner_df["Legal Entity"]
-    for match_id in range(len(inner_df)):
-        inner_row = inner_df.iloc[match_id]
-        key = inner_keys.iloc[match_id]
-        row_entity = entities.iloc[match_id]
-        if same_entity and row_entity is not None:
-            lookup = (key, row_entity)
-        else:
-            lookup = key
-        indices = key_to_indices.get(lookup, [])
-        inner_block = pd.DataFrame([{**{"Role": "INNER", "Match_Group": match_id + 1}, **{c: inner_row[c] for c in data_cols}}])
-        blocks.append(inner_block)
-        if indices:
-            outer_block = full_df.loc[indices, data_cols].copy()
-            outer_block.insert(0, "Match_Group", match_id + 1)
-            outer_block.insert(0, "Role", "OUTER")
-            blocks.append(outer_block)
+        key_to_indices = {}
+        for k, g in full_df.groupby("_outer_key", dropna=False):
+            key_to_indices[k] = g.index.tolist()
+    get_indices = key_to_indices.get
+    inner_keys = inner_df["gtin_inner_normalized"].astype(str).str.strip().values
+    entities = inner_df["Legal Entity"].values
+    n = len(inner_df)
+    # Collect all outer indices and match_ids for one big loc
+    all_outer_indices = []
+    all_outer_match_ids = []
+    for match_id in range(n):
+        key = inner_keys[match_id]
+        row_entity = entities[match_id]
+        lookup = (key, row_entity) if same_entity and row_entity is not None else key
+        indices = get_indices(lookup, [])
+        all_outer_indices.extend(indices)
+        all_outer_match_ids.extend([match_id + 1] * len(indices))
     full_df.drop(columns=["_outer_key"], inplace=True, errors="ignore")
-    out = pd.concat(blocks, ignore_index=True)
-    if out.empty:
-        return out
+    # Build inner block (one DataFrame, no row loop)
+    inner_block = inner_df[data_cols].copy()
+    inner_block.insert(0, "Match_Group", range(1, n + 1))
+    inner_block.insert(0, "Role", "INNER")
+    if not all_outer_indices:
+        out = inner_block
+    else:
+        outer_block = full_df.loc[all_outer_indices, data_cols].copy()
+        outer_block.insert(0, "Match_Group", all_outer_match_ids)
+        outer_block.insert(0, "Role", "OUTER")
+        # Interleave INNER/OUTER by Match_Group: sort so each INNER is followed by its OUTER rows
+        out = pd.concat([inner_block, outer_block], ignore_index=True)
+        out = out.sort_values(by=["Match_Group", "Role"], ascending=[True, True]).reset_index(drop=True)
     col_order = ["Role", "Match_Group"] + data_cols
     return out[[c for c in col_order if c in out.columns]]
 

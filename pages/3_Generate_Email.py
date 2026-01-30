@@ -10,7 +10,7 @@ from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
 import sys
-from auth_utils import render_login_header, render_login_footer
+from auth_utils import render_login_form
 
 # Page configuration
 st.set_page_config(
@@ -22,7 +22,7 @@ st.set_page_config(
 
 # Path and config
 sys.path.append(str(Path(__file__).parent.parent))
-INPUT_FILE = "all-products-prod-2026-01-22_15.44.25.xlsx"
+from duplicate_analysis_backend import list_output_dates, list_email_reports, OUTPUTS_BASE
 
 # MDM Business Rules
 GENERIC_GTINS = {
@@ -106,28 +106,6 @@ def classify_gtin_status(gtin_raw):
         return "14_digits"
 
 
-@st.cache_data
-def load_and_classify_data():
-    df = pd.read_excel(INPUT_FILE, dtype=str)
-    gtin_col = None
-    for col in df.columns:
-        c = str(col).lower().strip()
-        if "gtin" in c and "outer" in c:
-            gtin_col = col
-            break
-    if gtin_col is None:
-        for col in df.columns:
-            if str(col).lower().strip() in ["gtin-outer", "gtin_outer", "gtinouter"]:
-                gtin_col = col
-                break
-    if gtin_col is None:
-        st.error("GTIN-Outer column not found!")
-        return None, None
-    df["gtin_status"] = df[gtin_col].apply(classify_gtin_status)
-    df["gtin_outer_normalized"] = df[gtin_col].apply(normalize_gtin)
-    return df, gtin_col
-
-
 def check_password():
     return render_login_form("Generate Email")
 
@@ -136,9 +114,6 @@ def main():
     if not check_password():
         return
 
-    st.markdown('<h1 class="main-header">📧 Generate Email for Legal Entity</h1>', unsafe_allow_html=True)
-    st.markdown(f'<div style="text-align: center; color: #cbd5e1; margin-bottom: 1rem;">📁 Source file: <strong style="color: #94a3b8;">{INPUT_FILE}</strong></div>', unsafe_allow_html=True)
-
     st.markdown("""
     <style>
     .main-header { font-size: 3rem; font-weight: 700; color: #94a3b8; text-align: center; margin-bottom: 1rem; padding: 1rem 0; }
@@ -146,62 +121,59 @@ def main():
     </style>
     """, unsafe_allow_html=True)
 
-    with st.spinner("Loading data..."):
-        result = load_and_classify_data()
-        if result[0] is None:
-            return
-        df, _ = result
+    st.markdown('<h1 class="main-header">📧 Generate Email for Legal Entity</h1>', unsafe_allow_html=True)
 
-    legal_entities = sorted(df["Legal Entity"].unique())
+    output_dates = list_output_dates()
+    if not output_dates:
+        st.info(f"Aucun résultat pré-calculé. Exécutez le batch puis rechargez. Résultats dans `{OUTPUTS_BASE}/YYYY-MM-DD/`.")
+        return
 
+    date_options = [f"{d[0]} ({d[1]})" for d in output_dates]
+    date_paths = {date_options[i]: output_dates[i][1] for i in range(len(output_dates))}
+    selected_date_label = st.selectbox("**Extract date**", date_options, index=0, key="email_date")
+    output_dir = date_paths[selected_date_label]
+
+    email_reports = list_email_reports(output_dir)
+    if not email_reports:
+        st.warning("Aucun rapport email pour cette date (dossier email_reports/ vide).")
+        return
+
+    entity_options = [e[0] for e in email_reports]
+    entity_to_path = {e[0]: e[1] for e in email_reports}
+
+    st.markdown(f'<div style="text-align: center; color: #cbd5e1; margin-bottom: 1rem;">📁 Source: <strong style="color: #94a3b8;">outputs</strong> (rapports pré-générés par Legal Entity)</div>', unsafe_allow_html=True)
     st.markdown('<div class="section-header">Select Legal Entity</div>', unsafe_allow_html=True)
     col1, col2 = st.columns([2, 1])
     with col1:
         selected_entity_email = st.selectbox(
             "**Select Legal Entity**",
-            legal_entities,
+            entity_options,
             key="entity_email",
-            help="Select a Legal Entity to generate email and attachment"
+            help="Select a Legal Entity to download report and generate email"
         )
     with col2:
         st.markdown("<br>", unsafe_allow_html=True)
-        generate_email = st.button("📧 Generate Email & Report", use_container_width=True)
 
-    if generate_email and selected_entity_email:
-        entity_data = df[df["Legal Entity"] == selected_entity_email].copy()
-        generic_blocked = entity_data[entity_data["gtin_status"].isin(["GENERIC", "PLACEHOLDER", "BLOCKED"])].copy()
-        generic_gtins = generic_blocked[generic_blocked["gtin_status"] == "GENERIC"].copy()
-        blocked_gtins = generic_blocked[generic_blocked["gtin_status"].isin(["PLACEHOLDER", "BLOCKED"])].copy()
-        generic_count = len(generic_gtins)
-        blocked_count = len(blocked_gtins)
-        total_count = len(generic_blocked)
+    if selected_entity_email:
+        report_path = entity_to_path[selected_entity_email]
+        with open(report_path, "rb") as f:
+            excel_bytes = f.read()
+        try:
+            summary_df = pd.read_excel(io.BytesIO(excel_bytes), sheet_name="Summary", dtype=str)
+            generic_count = int(summary_df["Total Generic GTINs"].iloc[0]) if "Total Generic GTINs" in summary_df.columns else 0
+            blocked_count = int(summary_df["Total Placeholder GTINs (999...99)"].iloc[0]) if "Total Placeholder GTINs (999...99)" in summary_df.columns else 0
+            total_count = int(summary_df["Total to Review"].iloc[0]) if "Total to Review" in summary_df.columns else 0
+        except Exception:
+            generic_count = blocked_count = total_count = 0
 
-        if not generic_blocked.empty:
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                pd.DataFrame({
-                    "Legal Entity": [selected_entity_email],
-                    "Total Generic GTINs": [generic_count],
-                    "Total Placeholder GTINs (999...99)": [blocked_count],
-                    "Total to Review": [total_count],
-                    "Report Date": [date.today().strftime("%Y-%m-%d")]
-                }).to_excel(writer, sheet_name="Summary", index=False)
-                if not generic_gtins.empty:
-                    generic_gtins.to_excel(writer, sheet_name="Generic GTINs", index=False)
-                if not blocked_gtins.empty:
-                    blocked_gtins.to_excel(writer, sheet_name="Placeholder GTINs (999...99)", index=False)
-
-            output.seek(0)
-            recipients = LEGAL_ENTITY_EMAILS.get(selected_entity_email, [])
-            recipients_str = "; ".join(recipients) if recipients else ""
-
-            first_name = ""
-            if recipients and "@" in recipients[0]:
-                first_name = recipients[0].split("@")[0].replace("-", ".").split(".")[0].capitalize()
-            greeting = f"Hi {first_name}," if first_name else "Hi,"
-
-            email_subject = f"Action Required: Review of Generic and Placeholder GTINs - {selected_entity_email}"
-            email_body = f"""{greeting}
+        recipients = LEGAL_ENTITY_EMAILS.get(selected_entity_email, [])
+        recipients_str = "; ".join(recipients) if recipients else ""
+        first_name = ""
+        if recipients and "@" in recipients[0]:
+            first_name = recipients[0].split("@")[0].replace("-", ".").split(".")[0].capitalize()
+        greeting = f"Hi {first_name}," if first_name else "Hi,"
+        email_subject = f"Action Required: Review of Generic and Placeholder GTINs - {selected_entity_email}"
+        email_body = f"""{greeting}
 
 Your legal entity ({selected_entity_email}) has GTINs that require your attention and action.
 
@@ -227,61 +199,59 @@ Best regards
 Report generated on: {date.today().strftime("%B %d, %Y")}
 """
 
-            excel_filename = f"GTIN_Review_{selected_entity_email.replace(' ', '_').replace('/', '_')}_{date.today().isoformat()}.xlsx"
-            output.seek(0)
+        excel_filename = f"GTIN_Review_{selected_entity_email.replace(' ', '_').replace('/', '_')}_{date.today().isoformat()}.xlsx"
+        msg = MIMEMultipart()
+        msg['Subject'] = email_subject
+        msg['From'] = "MDM Team <mdm@sysco.com>"
+        msg['To'] = ", ".join(recipients) if recipients else ""
+        msg.attach(MIMEText(email_body, 'plain', 'utf-8'))
+        attachment = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        attachment.set_payload(excel_bytes)
+        encoders.encode_base64(attachment)
+        attachment.add_header('Content-Disposition', f'attachment; filename= {excel_filename}')
+        msg.attach(attachment)
+        eml_output = io.BytesIO(msg.as_bytes())
 
-            msg = MIMEMultipart()
-            msg['Subject'] = email_subject
-            msg['From'] = "MDM Team <mdm@sysco.com>"
-            msg['To'] = ", ".join(recipients) if recipients else ""
-            msg.attach(MIMEText(email_body, 'plain', 'utf-8'))
-            output.seek(0)
-            attachment = MIMEBase('application', 'vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-            attachment.set_payload(output.read())
-            encoders.encode_base64(attachment)
-            attachment.add_header('Content-Disposition', f'attachment; filename= {excel_filename}')
-            msg.attach(attachment)
-            eml_output = io.BytesIO()
-            eml_output.write(msg.as_bytes())
-            eml_output.seek(0)
-            output.seek(0)
+        st.markdown("### 📝 Email Template")
+        col_subject, col_icons = st.columns([4, 1])
+        with col_subject:
+            st.text_input("Subject", value=email_subject, key="email_subject", label_visibility="visible")
+        with col_icons:
+            st.markdown("<br>", unsafe_allow_html=True)
+            col_dl_eml, col_dl_excel = st.columns(2)
+            with col_dl_eml:
+                st.download_button(label="📥 .eml", data=eml_output.getvalue(), file_name=f"Email_Draft_{selected_entity_email.replace(' ', '_').replace('/', '_')}_{date.today().isoformat()}.eml", mime="message/rfc822", use_container_width=True, key="download_eml_icon", help="Download email with attachment (.eml)")
+            with col_dl_excel:
+                st.download_button(label="📊 Excel", data=excel_bytes, file_name=excel_filename, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="download_excel_icon", help="Download Excel file only")
 
-            st.markdown("### 📝 Email Template")
-            col_subject, col_icons = st.columns([4, 1])
-            with col_subject:
-                st.text_input("Subject", value=email_subject, key="email_subject", label_visibility="visible")
-            with col_icons:
-                st.markdown("<br>", unsafe_allow_html=True)
-                col_dl_eml, col_dl_excel = st.columns(2)
-                with col_dl_eml:
-                    st.download_button(label="📥", data=eml_output, file_name=f"Email_Draft_{selected_entity_email.replace(' ', '_').replace('/', '_')}_{date.today().isoformat()}.eml", mime="message/rfc822", use_container_width=True, key="download_eml_icon", help="Download email with attachment (.eml)")
-                with col_dl_excel:
-                    st.download_button(label="📊", data=output, file_name=excel_filename, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True, key="download_excel_icon", help="Download Excel file only")
+        st.text_area("Email Body", value=email_body, height=300, key="email_body")
+        st.markdown("---")
+        if recipients:
+            st.markdown(f'<div style="background-color: #1e293b; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #94a3b8; margin: 1rem 0;"><strong style="color: #94a3b8;">📧 Email Recipients for {selected_entity_email}:</strong><br><span style="color: #cbd5e1;">{recipients_str}</span></div>', unsafe_allow_html=True)
+        else:
+            st.markdown(f'<div style="background-color: #1e293b; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #f39c12; margin: 1rem 0;"><strong style="color: #f39c12;">⚠️ No email recipients configured for {selected_entity_email}</strong><br><span style="color: #cbd5e1;">Please add recipients manually when opening the .eml file in Outlook.</span></div>', unsafe_allow_html=True)
 
-            st.text_area("Email Body", value=email_body, height=300, key="email_body")
-            st.markdown("---")
-            if recipients:
-                st.markdown(f'<div style="background-color: #1e293b; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #94a3b8; margin: 1rem 0;"><strong style="color: #94a3b8;">📧 Email Recipients for {selected_entity_email}:</strong><br><span style="color: #cbd5e1;">{recipients_str}</span></div>', unsafe_allow_html=True)
-            else:
-                st.markdown(f'<div style="background-color: #1e293b; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #f39c12; margin: 1rem 0;"><strong style="color: #f39c12;">⚠️ No email recipients configured for {selected_entity_email}</strong><br><span style="color: #cbd5e1;">Please add recipients manually when opening the .eml file in Outlook.</span></div>', unsafe_allow_html=True)
-
-            st.markdown("### 📊 Report Preview")
+        st.markdown("### 📊 Report Preview")
+        if total_count > 0:
             st.info(f"**{selected_entity_email}**: {generic_count:,} Generic GTINs, {blocked_count:,} Placeholder GTINs (999...99)")
-            if not generic_gtins.empty:
-                st.markdown("#### Generic GTINs Sample (first 10)")
-                preview_cols = [c for c in ["SUPC", "Local Product Description", "Brand", "OSD Classification", "gtin_outer_normalized", "gtin_status"] if c in generic_gtins.columns]
-                if preview_cols:
-                    st.dataframe(generic_gtins[preview_cols].head(10), use_container_width=True, hide_index=True)
-            if not blocked_gtins.empty:
-                st.markdown("#### Placeholder GTINs (999...99) Sample (first 10)")
-                preview_cols = [c for c in ["SUPC", "Local Product Description", "Brand", "OSD Classification", "gtin_outer_normalized", "gtin_status"] if c in blocked_gtins.columns]
-                if preview_cols:
-                    st.dataframe(blocked_gtins[preview_cols].head(10), use_container_width=True, hide_index=True)
+            try:
+                generic_df = pd.read_excel(io.BytesIO(excel_bytes), sheet_name="Generic GTINs", dtype=str)
+                if not generic_df.empty:
+                    st.markdown("#### Generic GTINs Sample (first 10)")
+                    preview_cols = [c for c in ["SUPC", "Local Product Description", "Brand", "OSD Classification", "gtin_outer_normalized", "gtin_status"] if c in generic_df.columns]
+                    st.dataframe(generic_df[preview_cols].head(10) if preview_cols else generic_df.head(10), use_container_width=True, hide_index=True)
+                blocked_df = pd.read_excel(io.BytesIO(excel_bytes), sheet_name="Placeholder GTINs (999...99)", dtype=str)
+                if not blocked_df.empty:
+                    st.markdown("#### Placeholder GTINs (999...99) Sample (first 10)")
+                    preview_cols = [c for c in ["SUPC", "Local Product Description", "Brand", "OSD Classification", "gtin_outer_normalized", "gtin_status"] if c in blocked_df.columns]
+                    st.dataframe(blocked_df[preview_cols].head(10) if preview_cols else blocked_df.head(10), use_container_width=True, hide_index=True)
+            except Exception:
+                pass
         else:
             st.success(f"✅ **{selected_entity_email}** has no Generic or Placeholder GTINs. No action required!")
 
     st.markdown("---")
-    st.markdown(f"<div style='text-align: center; color: #cbd5e1;'>📅 Report generated on {date.today().strftime('%B %d, %Y')} | Total: <strong style='color: #94a3b8;'>{len(df):,}</strong> products in source</div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='text-align: center; color: #cbd5e1;'>📅 Report generated on {date.today().strftime('%B %d, %Y')} | Pre-computed reports from outputs</div>", unsafe_allow_html=True)
 
 
 if __name__ == "__main__":

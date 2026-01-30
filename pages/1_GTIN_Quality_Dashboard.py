@@ -205,14 +205,13 @@ st.markdown("""
 
 # Import des fonctions de classification depuis gtin_analysis.py
 import sys
+import os
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent))
 sys.path.append(str(Path(__file__).parent.parent))
 from export_utils import to_excel_bytes
 from auth_utils import render_login_form
-
-# Import necessary functions
-INPUT_FILE = "all-products-prod-2026-01-22_15.44.25.xlsx"
+from duplicate_analysis_backend import list_output_dates, load_quality_results, OUTPUTS_BASE
 
 # MDM Business Rules
 GENERIC_GTINS = {
@@ -317,37 +316,6 @@ def classify_gtin_status(gtin_raw):
         return "14_digits"
 
 
-@st.cache_data
-def load_and_classify_data():
-    """Load and classify GTIN data."""
-    df = pd.read_excel(INPUT_FILE, dtype=str)
-    
-    # Find GTIN-Outer column
-    gtin_col = None
-    for col in df.columns:
-        col_lower = str(col).lower().strip()
-        if "gtin" in col_lower and "outer" in col_lower:
-            gtin_col = col
-            break
-    
-    if gtin_col is None:
-        for col in df.columns:
-            col_lower = str(col).lower().strip()
-            if col_lower in ["gtin-outer", "gtin_outer", "gtinouter"]:
-                gtin_col = col
-                break
-    
-    if gtin_col is None:
-        st.error("GTIN-Outer column not found!")
-        return None
-    
-    # Classify GTIN status
-    df["gtin_status"] = df[gtin_col].apply(classify_gtin_status)
-    df["gtin_outer_normalized"] = df[gtin_col].apply(normalize_gtin)
-    
-    return df, gtin_col
-
-
 def check_password():
     """Returns `True` if the user had the correct password."""
     return render_login_form("GTIN Quality Dashboard")
@@ -357,110 +325,82 @@ def main():
     # Password protection
     if not check_password():
         st.stop()
-    
-    # Single loading placeholder: no header/button until data is ready (avoids ugly "effect behind")
+
+    # Load from pre-computed outputs (batch writes to outputs/YYYY-MM-DD/)
+    output_dates = list_output_dates()
+    if not output_dates:
+        st.info(
+            f"Aucun résultat pré-calculé. Exécutez le batch puis rechargez:\n\n"
+            f"`python run_duplicate_analysis_batch.py [fichier.xlsx]`\n\n"
+            f"Résultats dans `{OUTPUTS_BASE}/YYYY-MM-DD/`."
+        )
+        return
+
+    date_options = [f"{d[0]} ({d[1]})" for d in output_dates]
+    date_paths = {date_options[i]: output_dates[i][1] for i in range(len(output_dates))}
+    selected_date_label = st.selectbox("**Extract date**", date_options, index=0, key="quality_select_date")
+    output_dir = date_paths[selected_date_label]
+
     load_ph = st.empty()
     with load_ph.container():
         st.markdown("<div style='text-align: center; padding: 4rem 2rem; color: #94a3b8;'>", unsafe_allow_html=True)
         with st.spinner("Chargement des données…"):
-            result = load_and_classify_data()
+            data = load_quality_results(output_dir)
         st.markdown("</div>", unsafe_allow_html=True)
-    if result is None:
+    if data is None:
+        st.error("Impossible de charger les résultats Quality pour cette date.")
         return
-    df, gtin_col = result
     load_ph.empty()
-    
-    total_rows = len(df)
-    
+
+    overview = data["overview"]
+    by_entity_df = data["by_entity_df"]
+    full_classified_df = data["full_classified_df"]
+    generics_non_eupcker_df = data["generics_non_eupcker_df"]
+    legal_entities = data["legal_entities"]
+    total_rows = data["total_rows"]
+    gtin_col = data["gtin_outer_col"]
+    source_file = overview.get("source_file", "")
+
     # Header
     st.markdown('<h1 class="main-header">GTIN Quality Dashboard</h1>', unsafe_allow_html=True)
-    
-    # Display source file info
-    st.markdown(f'<div style="text-align: center; color: #cbd5e1; margin-bottom: 1rem;">Source file: <strong style="color: #94a3b8;">{INPUT_FILE}</strong></div>', unsafe_allow_html=True)
-    
-    # Save Analysis button - positioned right after source file with improved centered design
+    st.markdown(f'<div style="text-align: center; color: #cbd5e1; margin-bottom: 1rem;">Source: <strong style="color: #94a3b8;">{source_file}</strong></div>', unsafe_allow_html=True)
+
     col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 2])
     with col_btn2:
         if st.button("💾 Save Analysis and Report to Tracker", use_container_width=True, type="primary", key="save_quality_analysis_top"):
             st.session_state["save_quality_requested"] = True
-    
-    # Horizontal filters section
+
     st.markdown('<div class="filter-section">', unsafe_allow_html=True)
     st.markdown("### Filters")
-    
     search_query = st.text_input("🔍 Search SUPC or GTIN", placeholder="e.g. 12345 or 08701234567890", key="search_supc_gtin", help="Exact match on SUPC or GTIN (Outer, normalized).")
-    
-    legal_entities = sorted(df["Legal Entity"].unique())
-    if "selected_entities" not in st.session_state:
-        st.session_state.selected_entities = legal_entities
-    
+    if "selected_entities_quality" not in st.session_state:
+        st.session_state.selected_entities_quality = legal_entities
     col1, col2 = st.columns([4, 1])
     with col1:
-        selected_entities = st.multiselect(
-            "**Select Legal Entities**",
-            legal_entities,
-            default=st.session_state.selected_entities,
-            help="Select one or more Legal Entities to analyze"
-        )
-        st.session_state.selected_entities = selected_entities
+        selected_entities = st.multiselect("**Select Legal Entities**", legal_entities, default=st.session_state.selected_entities_quality, help="Select one or more Legal Entities to analyze", key="quality_entities")
+        st.session_state.selected_entities_quality = selected_entities
     with col2:
         st.markdown('<div style="padding-top: 1.5rem;">', unsafe_allow_html=True)
-        if st.button("Reset to All", use_container_width=True):
-            st.session_state.selected_entities = legal_entities
+        if st.button("Reset to All", use_container_width=True, key="quality_reset_all"):
+            st.session_state.selected_entities_quality = legal_entities
             st.rerun()
-        if st.button("Reset", use_container_width=True):
-            st.session_state.selected_entities = []
+        if st.button("Reset", use_container_width=True, key="quality_reset"):
+            st.session_state.selected_entities_quality = []
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
-    
     st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Ensure filter-section div is properly closed and remove empty elements
-    st.markdown("""
-    <script>
-    (function() {
-        setTimeout(function() {
-            // Remove empty filter-section divs and their containers
-            const containers = document.querySelectorAll('div[data-testid="stElementContainer"]');
-            containers.forEach(container => {
-                const filterSection = container.querySelector('div.filter-section, div[class*="filter-section"]');
-                if (filterSection && (filterSection.textContent.trim() === '' || filterSection.children.length === 0)) {
-                    container.style.display = 'none';
-                    container.remove();
-                }
-            });
-            
-            // Force multiselect height to match Reset buttons
-            const multiselect = document.querySelector('div[data-testid="stMultiSelect"]');
-            const resetColumn = document.querySelector('div[data-testid="column"]:has(button)');
-            if (multiselect && resetColumn) {
-                const resetButtons = resetColumn.querySelectorAll('button');
-                let totalHeight = 0;
-                resetButtons.forEach(btn => {
-                    totalHeight += btn.offsetHeight + 8; // 8px for gap
-                });
-                if (totalHeight > 0) {
-                    multiselect.style.minHeight = totalHeight + 'px';
-                    const multiselectInner = multiselect.querySelector('div > div');
-                    if (multiselectInner) {
-                        multiselectInner.style.minHeight = totalHeight + 'px';
-                    }
-                }
-            }
-        }, 100);
-    })();
-    </script>
-    """, unsafe_allow_html=True)
-    
-    # Use session state for filtering
-    selected_entities = st.session_state.selected_entities
-    
+
+    selected_entities = st.session_state.selected_entities_quality
     if not selected_entities:
         st.warning("Please select at least one Legal Entity")
         return
-    
-    # Filter data
-    df_filtered = df[df["Legal Entity"].isin(selected_entities)].copy()
+
+    # Filter in memory (all data loaded from outputs/)
+    entity_counts = overview.get("entity_total_products", {})
+    filtered_len = sum(entity_counts.get(e, 0) for e in selected_entities) if selected_entities else total_rows
+    by_entity_filtered = by_entity_df[by_entity_df["Legal Entity"].isin(selected_entities)] if selected_entities else by_entity_df
+    df_filtered = full_classified_df[full_classified_df["Legal Entity"].isin(selected_entities)].copy() if selected_entities else full_classified_df.copy()
+    generics_filtered = generics_non_eupcker_df[generics_non_eupcker_df["Legal Entity"].isin(selected_entities)] if not generics_non_eupcker_df.empty and selected_entities else generics_non_eupcker_df
     
     # Search filter (SUPC or GTIN, exact match)
     if search_query and str(search_query).strip():
@@ -496,20 +436,15 @@ def main():
     total_14 = df_filtered[df_filtered["gtin_status"] == "14_digits"].shape[0]
     
     brand_col = next((c for c in df_filtered.columns if str(c).strip().lower() == "brand"), None)
-    generics_non_eupcker = pd.DataFrame()
-    total_generics_non_eupcker = 0
-    if brand_col:
-        generics_df = df_filtered[df_filtered["gtin_status"] == "GENERIC"].copy()
-        is_not_eupcker = generics_df[brand_col].fillna("").astype(str).str.strip().str.upper() != "EUPCKER"
-        generics_non_eupcker = generics_df[is_not_eupcker]
-        total_generics_non_eupcker = len(generics_non_eupcker)
+    generics_non_eupcker = generics_filtered
+    total_generics_non_eupcker = len(generics_filtered)
     
-    compliance_rate = (total_valid / len(df_filtered) * 100) if len(df_filtered) > 0 else 0
-    invalid_rate = (total_invalid / len(df_filtered) * 100) if len(df_filtered) > 0 else 0
+    compliance_rate = (total_valid / filtered_len * 100) if filtered_len > 0 else 0
+    invalid_rate = (total_invalid / filtered_len * 100) if filtered_len > 0 else 0
     
     col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
     with col1:
-        st.metric("Total Products", f"{len(df_filtered):,}")
+        st.metric("Total Products", f"{filtered_len:,}")
     with col2:
         st.metric("✅ Valid GTINs", f"{total_valid:,}", f"{compliance_rate:.1f}%")
     with col3:
@@ -559,7 +494,7 @@ def main():
         tracker_entry = {
             "analysis_type": "quality",
             "legal_entities": selected_entities,
-            "total_products": len(df_filtered),
+            "total_products": filtered_len,
             "total_valid": total_valid,
             "total_invalid": total_invalid,
             "total_generic": total_generic,
@@ -634,9 +569,16 @@ def main():
         use_container_width=True,
         height=400
     )
+    _all_entities = set(selected_entities) == set(legal_entities)
+    _quality_by_entity_path = os.path.join(output_dir, "quality_by_entity.xlsx")
+    if _all_entities and os.path.isfile(_quality_by_entity_path):
+        with open(_quality_by_entity_path, "rb") as _f:
+            _quality_bytes = _f.read()
+    else:
+        _quality_bytes = to_excel_bytes(display_df)
     st.download_button(
         "Download as Excel",
-        data=to_excel_bytes(display_df),
+        data=_quality_bytes,
         file_name="quality_analysis_by_legal_entity.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         key="dl_quality_analysis"
@@ -787,7 +729,7 @@ def main():
     st.markdown(
         f"<div class='footer' style='text-align: center; color: #cbd5e1;'>"
         f"Report generated on {date.today().strftime('%B %d, %Y')} | "
-        f"Total: <strong style='color: #94a3b8;'>{total_rows:,}</strong> products analyzed"
+        f"Filtered: <strong style='color: #94a3b8;'>{filtered_len:,}</strong> products from <strong style='color: #94a3b8;'>{total_rows:,}</strong> total"
         f"</div>",
         unsafe_allow_html=True
     )

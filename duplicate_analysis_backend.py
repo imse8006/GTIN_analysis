@@ -245,8 +245,13 @@ def analyze_inner_equals_outer(df, gtin_outer_col, gtin_inner_col):
             "has_inner": False,
         }
     df = df.copy()
-    df["_outer_status"] = df["gtin_outer_normalized"].apply(lambda x: classify_gtin_status(x) if x is not None else "MISSING")
-    df["_inner_status"] = df["gtin_inner_normalized"].apply(lambda x: classify_gtin_status(x) if x is not None else "MISSING")
+    # Classify only unique GTINs (huge win on 144k+ rows: ~288k -> ~50k-100k unique)
+    uniq_outer = df["gtin_outer_normalized"].dropna().unique()
+    uniq_inner = df["gtin_inner_normalized"].dropna().unique()
+    status_outer = {v: classify_gtin_status(v) for v in uniq_outer}
+    status_inner = {v: classify_gtin_status(v) for v in uniq_inner}
+    df["_outer_status"] = df["gtin_outer_normalized"].map(status_outer).fillna("MISSING")
+    df["_inner_status"] = df["gtin_inner_normalized"].map(status_inner).fillna("MISSING")
     excluded = {"GENERIC_GTIN", "EXPLICIT_BLOCKED"}
     ok_outer = ~df["_outer_status"].isin(excluded) & df["gtin_outer_normalized"].notna()
     ok_inner = ~df["_inner_status"].isin(excluded) & df["gtin_inner_normalized"].notna()
@@ -257,7 +262,10 @@ def analyze_inner_equals_outer(df, gtin_outer_col, gtin_inner_col):
     same_row_df = same_row_df.drop(columns=["_outer_status", "_inner_status"], errors="ignore")
     ok_rows = df[ok_outer].copy()
     ok_rows["_outer_key"] = ok_rows["gtin_outer_normalized"].astype(str).str.strip()
-    entities_by_outer_gtin = ok_rows.groupby("_outer_key")["Legal Entity"].apply(lambda s: set(s.dropna().unique())).to_dict()
+    # Build entities_by_outer_gtin in one pass (no get_group per key)
+    entities_by_outer_gtin = {}
+    for k, g in ok_rows.groupby("_outer_key", dropna=False):
+        entities_by_outer_gtin[k] = set(g["Legal Entity"].dropna().unique())
     with_inner = df[ok_inner & df["gtin_inner_normalized"].notna() & (inner_str != "") & (~inner_eq_outer_row)].copy()
     with_inner = with_inner.drop(columns=["_outer_status", "_inner_status"], errors="ignore")
     with_inner["_inner_key"] = with_inner["gtin_inner_normalized"].astype(str).str.strip()
@@ -268,12 +276,16 @@ def analyze_inner_equals_outer(df, gtin_outer_col, gtin_inner_col):
             "other_entity": {"total": 0, "unique_gtins": 0, "df": pd.DataFrame(), "gtin_list": []},
             "has_inner": True,
         }
+    _empty = frozenset()
+    get_ent = entities_by_outer_gtin.get
+    keys_arr = with_inner["_inner_key"].values
+    entities_arr = with_inner["Legal Entity"].values
     buckets = []
-    for inner_k, row_entity in zip(with_inner["_inner_key"], with_inner["Legal Entity"]):
-        entities = entities_by_outer_gtin.get(inner_k, set())
-        if not entities:
+    for i in range(len(keys_arr)):
+        ent_set = get_ent(keys_arr[i], _empty)
+        if not ent_set:
             buckets.append("none")
-        elif entities == {row_entity}:
+        elif ent_set == {entities_arr[i]}:
             buckets.append("same_entity")
         else:
             buckets.append("other_entity")
@@ -326,6 +338,185 @@ def analyze_valid_gtins_by_entity(df, gtin_outer_col):
 OUTPUTS_BASE = "outputs"
 OUTPUT_MANIFEST = "manifest.json"
 OUTPUT_OVERVIEW = "overview.json"
+
+# Quality Dashboard: map gtin_analysis status to Quality page status
+_QUALITY_STATUS_MAP = {
+    "MISSING": "INVALID", "NON_NUMERIC": "INVALID", "INVALID_LENGTH": "INVALID", "SUSPECT": "INVALID",
+    "EXPLICIT_BLOCKED": "PLACEHOLDER", "GENERIC_GTIN": "GENERIC",
+    "GTIN_8": "8_digits", "GTIN_13": "13_digits", "GTIN_14": "14_digits",
+}
+
+
+def _classify_gtin_quality(gtin_raw):
+    """Classify for Quality Dashboard: INVALID, GENERIC, PLACEHOLDER, 8_digits, 13_digits, 14_digits."""
+    return _QUALITY_STATUS_MAP.get(classify_gtin_status(gtin_raw), "INVALID")
+
+
+# Generic GTIN Analysis: taxonomy mapping (same as page 5)
+GENERIC_GTIN_TAXONOMY = {
+    "10000000000009": {"lov": "Butchery", "business_centres": ["BEEF", "PORK", "POULTRY"]},
+    "30000000000009": {"lov": "Equipment", "business_centres": ["SUPPLIES & EQUIPMENT"]},
+    "40000000000009": {"lov": "Fishmongery", "business_centres": ["SEAFOOD"]},
+    "70000000000009": {"lov": "Produce", "business_centres": ["PRODUCE"]},
+    "20000000000009": {"lov": "Not in MDD", "business_centres": []},
+    "50000000000009": {"lov": "Not in MDD", "business_centres": []},
+    "60000000000009": {"lov": "Not in MDD", "business_centres": []},
+    "80000000000009": {"lov": "Not in MDD", "business_centres": []},
+}
+EXPECTED_GTIN_BY_TAXONOMY = {}
+for _gtin14, _info in GENERIC_GTIN_TAXONOMY.items():
+    for _bc in _info["business_centres"]:
+        EXPECTED_GTIN_BY_TAXONOMY[_bc.upper()] = _gtin14
+
+
+def _gtin_to_14(gtin):
+    if not gtin or not str(gtin).isdigit():
+        return gtin or ""
+    s = str(gtin).strip()
+    if len(s) == 13:
+        return "0" + s
+    return s if len(s) == 14 else s
+
+
+def run_quality_analysis(df, gtin_outer_col, output_dir: str):
+    """Run Quality Dashboard logic (all legal entities). Write quality_*.xlsx and quality_overview.json."""
+    df = df.copy()
+    df["gtin_status"] = df["gtin_outer_normalized"].apply(_classify_gtin_quality)
+    valid_statuses = ["8_digits", "13_digits", "14_digits"]
+    total_valid = df[df["gtin_status"].isin(valid_statuses)].shape[0]
+    total_invalid = df[df["gtin_status"] == "INVALID"].shape[0]
+    total_generic = df[df["gtin_status"] == "GENERIC"].shape[0]
+    total_blocked = df[df["gtin_status"].isin(["PLACEHOLDER", "BLOCKED"])].shape[0]
+    total_rows = len(df)
+    compliance_rate = (total_valid / total_rows * 100) if total_rows > 0 else 0
+    legal_entities = sorted(df["Legal Entity"].dropna().unique().tolist())
+    entity_counts = df.groupby("Legal Entity").size().to_dict()
+
+    analysis_data = []
+    for entity in legal_entities:
+        entity_df = df[df["Legal Entity"] == entity]
+        total = len(entity_df)
+        status_counts = entity_df["gtin_status"].value_counts().to_dict()
+        valid_count = sum(status_counts.get(s, 0) for s in valid_statuses)
+        invalid_count = status_counts.get("INVALID", 0)
+        generic_count = status_counts.get("GENERIC", 0)
+        blocked_count = status_counts.get("PLACEHOLDER", 0) + status_counts.get("BLOCKED", 0)
+        compliance = (valid_count / total * 100) if total > 0 else 0
+        analysis_data.append({
+            "Legal Entity": entity,
+            "Total Products": total,
+            "Valid GTINs": valid_count,
+            "Invalid GTINs": invalid_count,
+            "Generic GTINs": generic_count,
+            "Placeholder GTINs (999...99)": blocked_count,
+            "Compliance Rate (%)": round(compliance, 2),
+            "8 digits": status_counts.get("8_digits", 0),
+            "13 digits": status_counts.get("13_digits", 0),
+            "14 digits": status_counts.get("14_digits", 0),
+        })
+    quality_by_entity = pd.DataFrame(analysis_data)
+    quality_by_entity.to_excel(os.path.join(output_dir, "quality_by_entity.xlsx"), index=False)
+    df.to_excel(os.path.join(output_dir, "quality_full_classified.xlsx"), index=False)
+
+    brand_col = next((c for c in df.columns if str(c).strip().lower() == "brand"), None)
+    if brand_col:
+        generics_df = df[df["gtin_status"] == "GENERIC"].copy()
+        is_not_eupcker = generics_df[brand_col].fillna("").astype(str).str.strip().str.upper() != "EUPCKER"
+        generics_non_eupcker = generics_df[is_not_eupcker]
+        if len(generics_non_eupcker) > 0:
+            pc = [c for c in ["Legal Entity", "SUPC", "Local Product Description", brand_col, "OSD Classification", "gtin_outer_normalized"] if c in generics_non_eupcker.columns]
+            if pc:
+                generics_non_eupcker[pc].to_excel(os.path.join(output_dir, "generics_non_eupcker.xlsx"), index=False)
+    quality_overview = {
+        "total_rows": total_rows,
+        "legal_entities": legal_entities,
+        "entity_total_products": entity_counts,
+        "total_valid": total_valid,
+        "total_invalid": total_invalid,
+        "total_generic": total_generic,
+        "total_placeholder": total_blocked,
+        "compliance_rate": round(compliance_rate, 2),
+    }
+    with open(os.path.join(output_dir, "quality_overview.json"), "w", encoding="utf-8") as f:
+        json.dump(quality_overview, f, indent=2)
+
+
+def run_generic_analysis(df, gtin_outer_col, output_dir: str):
+    """Run Generic GTIN conformity analysis (all legal entities). Write generic_*.xlsx and generic_overview.json."""
+    df = df.copy()
+    df["gtin_status_gen"] = df["gtin_outer_normalized"].apply(_classify_gtin_quality)
+    generic_df = df[df["gtin_status_gen"] == "GENERIC"].copy()
+    if len(generic_df) == 0:
+        with open(os.path.join(output_dir, "generic_overview.json"), "w", encoding="utf-8") as f:
+            json.dump({"total": 0, "legal_entities": [], "conforming_count": 0, "non_conforming_count": 0}, f, indent=2)
+        return
+    osd_col = next((c for c in df.columns if str(c).strip().upper() == "OSD CLASSIFICATION"), None)
+    if osd_col is not None:
+        generic_df["osd_prefix"] = generic_df[osd_col].fillna("").astype(str).str.strip().str.split("-").str[0].str.strip()
+    else:
+        generic_df["osd_prefix"] = ""
+    generic_df["gtin_14"] = generic_df["gtin_outer_normalized"].apply(_gtin_to_14)
+    generic_df["expected_gtin"] = generic_df["osd_prefix"].apply(
+        lambda x: EXPECTED_GTIN_BY_TAXONOMY.get(str(x).strip().upper()) if pd.notna(x) and str(x).strip() else None
+    )
+    generic_df["conforming"] = generic_df["expected_gtin"].notna() & (generic_df["gtin_14"] == generic_df["expected_gtin"])
+    conforming_count = generic_df["conforming"].sum()
+    non_conforming_count = len(generic_df) - conforming_count
+    by_ent = generic_df.groupby("Legal Entity").agg(total=("gtin_14", "count"), conforming=("conforming", "sum")).reset_index()
+    by_ent["non_conforming"] = by_ent["total"] - by_ent["conforming"]
+    by_ent["conforming_%"] = (by_ent["conforming"] / by_ent["total"] * 100).round(1)
+    by_ent = by_ent.sort_values("non_conforming", ascending=False)
+    by_ent.to_excel(os.path.join(output_dir, "generic_conformity_by_entity.xlsx"), index=False)
+    non_conforming_df = generic_df[~generic_df["conforming"]].copy()
+    if len(non_conforming_df) > 0:
+        display_nc = non_conforming_df[["Legal Entity", "osd_prefix", "gtin_14", "expected_gtin"]].copy()
+        display_nc.columns = ["Legal Entity", "OSD prefix (taxonomy)", "Generic used", "Expected Generic"]
+        display_nc.to_excel(os.path.join(output_dir, "generic_non_conforming.xlsx"), index=False)
+    sample_cols = [c for c in ["Legal Entity", "osd_prefix", "gtin_14", "expected_gtin", "conforming", "SUPC", "Local Product Description"] if c in generic_df.columns]
+    if sample_cols:
+        generic_df[sample_cols].to_excel(os.path.join(output_dir, "generic_all_records_with_conformity.xlsx"), index=False)
+    generic_overview = {
+        "total": len(generic_df),
+        "conforming_count": int(conforming_count),
+        "non_conforming_count": int(non_conforming_count),
+        "legal_entities": sorted(generic_df["Legal Entity"].dropna().unique().tolist()),
+    }
+    with open(os.path.join(output_dir, "generic_overview.json"), "w", encoding="utf-8") as f:
+        json.dump(generic_overview, f, indent=2)
+
+
+def run_generate_email_reports(df, gtin_outer_col, output_dir: str):
+    """Generate one Excel report per legal entity (Summary + Generic + Placeholder sheets). All entities only."""
+    df = df.copy()
+    df["gtin_status"] = df["gtin_outer_normalized"].apply(_classify_gtin_quality)
+    email_dir = os.path.join(output_dir, "email_reports")
+    Path(email_dir).mkdir(parents=True, exist_ok=True)
+    legal_entities = sorted(df["Legal Entity"].dropna().unique().tolist())
+    for entity in legal_entities:
+        entity_data = df[df["Legal Entity"] == entity].copy()
+        generic_blocked = entity_data[entity_data["gtin_status"].isin(["GENERIC", "PLACEHOLDER", "BLOCKED"])].copy()
+        generic_gtins = generic_blocked[generic_blocked["gtin_status"] == "GENERIC"].copy()
+        blocked_gtins = generic_blocked[generic_blocked["gtin_status"].isin(["PLACEHOLDER", "BLOCKED"])].copy()
+        generic_count = len(generic_gtins)
+        blocked_count = len(blocked_gtins)
+        total_count = len(generic_blocked)
+        safe_name = entity.replace(" ", "_").replace("/", "_")
+        path = os.path.join(email_dir, f"{safe_name}.xlsx")
+        with pd.ExcelWriter(path, engine="openpyxl") as writer:
+            pd.DataFrame({
+                "Legal Entity": [entity],
+                "Total Generic GTINs": [generic_count],
+                "Total Placeholder GTINs (999...99)": [blocked_count],
+                "Total to Review": [total_count],
+                "Report Date": [datetime.now().strftime("%Y-%m-%d")],
+            }).to_excel(writer, sheet_name="Summary", index=False)
+            if len(generic_gtins) > 0:
+                generic_gtins.to_excel(writer, sheet_name="Generic GTINs", index=False)
+            if len(blocked_gtins) > 0:
+                blocked_gtins.to_excel(writer, sheet_name="Placeholder GTINs (999...99)", index=False)
+    email_overview = {"legal_entities": legal_entities, "report_count": len(legal_entities)}
+    with open(os.path.join(output_dir, "email_overview.json"), "w", encoding="utf-8") as f:
+        json.dump(email_overview, f, indent=2)
 
 
 def run_full_analysis(input_excel_path: str, output_dir: str = None, extract_date: str = None) -> str:
@@ -431,6 +622,13 @@ def run_full_analysis(input_excel_path: str, output_dir: str = None, extract_dat
         write_excel("inner_eq_outer_same_entity.xlsx", to_excel_bytes_inner_outer_paired(same_entity_df, df, same_entity=True))
     if len(other_entity_df) > 0:
         write_excel("inner_eq_outer_other_entity.xlsx", to_excel_bytes_inner_outer_paired(other_entity_df, df, same_entity=False))
+
+    print("Running Quality Dashboard analysis...")
+    run_quality_analysis(df, gtin_outer_col, output_dir)
+    print("Running Generic GTIN analysis...")
+    run_generic_analysis(df, gtin_outer_col, output_dir)
+    print("Running Generate Email reports (one per Legal Entity)...")
+    run_generate_email_reports(df, gtin_outer_col, output_dir)
 
     print(f"Done. Outputs written to {output_dir}")
     return output_dir
@@ -571,3 +769,96 @@ def load_output_results(output_dir: str, selected_entities: list = None):
     }
 
     return overview, manifest, duplicate_results, generic_results, placeholder_results, suspect_results, valid_results, inner_eq_outer_results, total_rows, gtin_outer_col, gtin_inner_col
+
+
+def load_quality_results(output_dir: str):
+    """
+    Load Quality Dashboard pre-computed results (all legal entities). Streamlit page filters by selected_entities in memory.
+    Returns dict: overview, by_entity_df, full_classified_df, generics_non_eupcker_df, legal_entities, total_rows, gtin_outer_col.
+    """
+    overview_path = os.path.join(output_dir, "quality_overview.json")
+    if not os.path.isfile(overview_path):
+        return None
+    with open(overview_path, "r", encoding="utf-8") as f:
+        overview = json.load(f)
+    legal_entities = overview.get("legal_entities", [])
+
+    def _read(path):
+        p = os.path.join(output_dir, path)
+        if not os.path.isfile(p):
+            return pd.DataFrame()
+        return pd.read_excel(p, dtype=str)
+
+    by_entity_df = _read("quality_by_entity.xlsx")
+    full_classified_df = _read("quality_full_classified.xlsx")
+    generics_non_eupcker_df = _read("generics_non_eupcker.xlsx")
+    manifest = load_manifest(output_dir)
+    gtin_outer_col = manifest.get("gtin_outer_col", "GTIN-Outer")
+    total_rows = overview.get("total_rows", 0)
+    return {
+        "overview": overview,
+        "by_entity_df": by_entity_df,
+        "full_classified_df": full_classified_df,
+        "generics_non_eupcker_df": generics_non_eupcker_df,
+        "legal_entities": legal_entities,
+        "total_rows": total_rows,
+        "gtin_outer_col": gtin_outer_col,
+    }
+
+
+def load_generic_results(output_dir: str):
+    """
+    Load Generic GTIN pre-computed results (all legal entities). Streamlit page filters by selected_entities in memory.
+    Returns dict: overview, by_entity_df, non_conforming_df, all_records_df, legal_entities, gtin_outer_col.
+    """
+    overview_path = os.path.join(output_dir, "generic_overview.json")
+    if not os.path.isfile(overview_path):
+        return None
+    with open(overview_path, "r", encoding="utf-8") as f:
+        overview = json.load(f)
+    legal_entities = overview.get("legal_entities", [])
+
+    def _read(path):
+        p = os.path.join(output_dir, path)
+        if not os.path.isfile(p):
+            return pd.DataFrame()
+        return pd.read_excel(p, dtype=str)
+
+    by_entity_df = _read("generic_conformity_by_entity.xlsx")
+    non_conforming_df = _read("generic_non_conforming.xlsx")
+    all_records_df = _read("generic_all_records_with_conformity.xlsx")
+    manifest = load_manifest(output_dir)
+    gtin_outer_col = manifest.get("gtin_outer_col", "GTIN-Outer")
+    return {
+        "overview": overview,
+        "by_entity_df": by_entity_df,
+        "non_conforming_df": non_conforming_df,
+        "all_records_df": all_records_df,
+        "legal_entities": legal_entities,
+        "gtin_outer_col": gtin_outer_col,
+    }
+
+
+def list_email_reports(output_dir: str):
+    """List available email report Excel files (one per Legal Entity). Returns list of (entity_name, file_path)."""
+    overview_path = os.path.join(output_dir, "email_overview.json")
+    email_dir = os.path.join(output_dir, "email_reports")
+    if not os.path.isdir(email_dir):
+        return []
+    entities = []
+    if os.path.isfile(overview_path):
+        with open(overview_path, "r", encoding="utf-8") as f:
+            entities = json.load(f).get("legal_entities", [])
+    out = []
+    for entity in entities:
+        safe_name = entity.replace(" ", "_").replace("/", "_") + ".xlsx"
+        path = os.path.join(email_dir, safe_name)
+        if os.path.isfile(path):
+            out.append((entity, path))
+    if not out:
+        for name in os.listdir(email_dir):
+            if name.endswith(".xlsx"):
+                path = os.path.join(email_dir, name)
+                entity_name = name.replace(".xlsx", "").replace("_", " ")
+                out.append((entity_name, path))
+    return sorted(out, key=lambda x: x[0])

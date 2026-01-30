@@ -33,6 +33,8 @@ Thumbs.db
 # Reports
 gtin_report_*/
 
+# Do not ignore outputs/ — committed for Streamlit Cloud (Duplicate Analysis pre-computed results)
+
 # Tracker data
 tracker_data.json
 
