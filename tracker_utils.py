@@ -23,6 +23,17 @@ def load_tracker_data() -> List[Dict]:
         return []
 
 
+def has_tracker_entry_for(extract_date: str, source_file: str, analysis_type: str) -> bool:
+    """Return True if an entry already exists for this extract_date + source_file + analysis_type."""
+    data = load_tracker_data()
+    for entry in data:
+        if (entry.get("analysis_type") == analysis_type
+            and entry.get("extract_date") == extract_date
+            and entry.get("source_file") == source_file):
+            return True
+    return False
+
+
 def save_tracker_data(data: Dict) -> bool:
     """Save a new entry to tracker data."""
     try:

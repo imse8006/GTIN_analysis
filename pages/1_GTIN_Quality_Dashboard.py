@@ -211,7 +211,8 @@ sys.path.append(str(Path(__file__).parent))
 sys.path.append(str(Path(__file__).parent.parent))
 from export_utils import to_excel_bytes
 from auth_utils import render_login_form
-from duplicate_analysis_backend import list_output_dates, load_quality_results, OUTPUTS_BASE
+from duplicate_analysis_backend import list_output_dates, load_quality_results, load_manifest, OUTPUTS_BASE
+from tracker_utils import save_tracker_data, has_tracker_entry_for
 
 
 @st.cache_data(ttl=3600)
@@ -371,10 +372,42 @@ def main():
     st.markdown('<h1 class="main-header">GTIN Quality Dashboard</h1>', unsafe_allow_html=True)
     st.markdown(f'<div style="text-align: center; color: #cbd5e1; margin-bottom: 1rem;">Source: <strong style="color: #94a3b8;">{source_file}</strong></div>', unsafe_allow_html=True)
 
-    col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 2])
-    with col_btn2:
-        if st.button("💾 Save Analysis and Report to Tracker", use_container_width=True, type="primary", key="save_quality_analysis_top"):
-            st.session_state["save_quality_requested"] = True
+    # Auto-save to tracker when this output is not yet recorded
+    extract_date = Path(output_dir).name
+    manifest = load_manifest(output_dir)
+    source_file_tracker = manifest.get("source_file", source_file)
+    if not has_tracker_entry_for(extract_date, source_file_tracker, "quality"):
+        entity_metrics = []
+        for _, row in by_entity_df.iterrows():
+            entity_metrics.append({
+                "legal_entity": row.get("Legal Entity", ""),
+                "total_products": int(row["Total Products"]) if "Total Products" in row and pd.notna(row["Total Products"]) else 0,
+                "valid_gtins": int(row["Valid GTINs"]) if "Valid GTINs" in row and pd.notna(row["Valid GTINs"]) else 0,
+                "invalid_gtins": int(row["Invalid GTINs"]) if "Invalid GTINs" in row and pd.notna(row["Invalid GTINs"]) else 0,
+                "generic_gtins": int(row["Generic GTINs"]) if "Generic GTINs" in row and pd.notna(row["Generic GTINs"]) else 0,
+                "placeholder_gtins": int(row["Placeholder GTINs (999...99)"]) if "Placeholder GTINs (999...99)" in row and pd.notna(row["Placeholder GTINs (999...99)"]) else 0,
+                "compliance_rate": round(float(row["Compliance Rate (%)"]), 2) if "Compliance Rate (%)" in row and pd.notna(row["Compliance Rate (%)"]) else 0,
+            })
+        tracker_entry = {
+            "analysis_type": "quality",
+            "extract_date": extract_date,
+            "source_file": source_file_tracker,
+            "legal_entities": legal_entities,
+            "total_products": overview.get("total_rows", 0),
+            "total_valid": overview.get("total_valid", 0),
+            "total_invalid": overview.get("total_invalid", 0),
+            "total_generic": overview.get("total_generic", 0),
+            "total_placeholder": overview.get("total_placeholder", 0),
+            "compliance_rate": round(float(overview.get("compliance_rate", 0)), 2),
+            "breakdown": {},
+            "entity_metrics": entity_metrics,
+        }
+        if "8 digits" in by_entity_df.columns and "13 digits" in by_entity_df.columns and "14 digits" in by_entity_df.columns:
+            try:
+                tracker_entry["breakdown"] = {"8_digits": int(by_entity_df["8 digits"].sum()), "13_digits": int(by_entity_df["13 digits"].sum()), "14_digits": int(by_entity_df["14 digits"].sum())}
+            except Exception:
+                pass
+        save_tracker_data(tracker_entry)
 
     st.markdown('<div class="filter-section">', unsafe_allow_html=True)
     st.markdown("### Filters")
@@ -466,58 +499,6 @@ def main():
             st.metric("Generics (Brand ≠ EUPCKER)", f"{total_generics_non_eupcker:,}", help="Generic GTINs where Brand is not EUPCKER")
         else:
             st.metric("Generics (Brand ≠ EUPCKER)", "N/A", help="Column Brand not found")
-    
-    # Handle save button click (button is at the top, but logic is here after data is loaded)
-    if st.session_state.get("save_quality_requested", False):
-        st.session_state["save_quality_requested"] = False  # Reset flag
-        import sys
-        from pathlib import Path
-        sys.path.append(str(Path(__file__).parent.parent))
-        from tracker_utils import save_tracker_data
-        
-        # Prepare metrics by legal entity
-        entity_metrics = []
-        for entity in selected_entities:
-            entity_df = df_filtered[df_filtered["Legal Entity"] == entity]
-            entity_total = len(entity_df)
-            entity_valid = entity_df[entity_df["gtin_status"].isin(valid_statuses)].shape[0]
-            entity_invalid = entity_df[entity_df["gtin_status"] == "INVALID"].shape[0]
-            entity_generic = entity_df[entity_df["gtin_status"] == "GENERIC"].shape[0]
-            entity_blocked = entity_df[entity_df["gtin_status"].isin(["PLACEHOLDER", "BLOCKED"])].shape[0]
-            entity_compliance = (entity_valid / entity_total * 100) if entity_total > 0 else 0
-            
-            entity_metrics.append({
-                "legal_entity": entity,
-                "total_products": entity_total,
-                "valid_gtins": entity_valid,
-                "invalid_gtins": entity_invalid,
-                "generic_gtins": entity_generic,
-                "placeholder_gtins": entity_blocked,
-                "compliance_rate": round(entity_compliance, 2)
-            })
-        
-        # Save to tracker
-        tracker_entry = {
-            "analysis_type": "quality",
-            "legal_entities": selected_entities,
-            "total_products": filtered_len,
-            "total_valid": total_valid,
-            "total_invalid": total_invalid,
-            "total_generic": total_generic,
-            "total_placeholder": total_blocked,
-            "compliance_rate": round(compliance_rate, 2),
-            "breakdown": {
-                "8_digits": total_8,
-                "13_digits": total_13,
-                "14_digits": total_14
-            },
-            "entity_metrics": entity_metrics
-        }
-        
-        if save_tracker_data(tracker_entry):
-            st.success("Analysis saved to tracker successfully!")
-        else:
-            st.error("Error saving analysis to tracker")
     
     # Analysis by Legal Entity
     st.markdown('<div class="section-header">Analysis by Legal Entity</div>', unsafe_allow_html=True)

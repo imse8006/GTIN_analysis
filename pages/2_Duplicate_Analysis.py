@@ -18,6 +18,7 @@ from duplicate_analysis_backend import (
     load_output_results,
     OUTPUTS_BASE,
 )
+from tracker_utils import save_tracker_data, has_tracker_entry_for
 
 
 @st.cache_data(ttl=3600)
@@ -726,19 +727,31 @@ def main():
     overview, manifest, duplicate_results, generic_results, placeholder_results, suspect_results, valid_results, inner_eq_outer_results, total_rows, gtin_outer_col, gtin_inner_col = loaded
     source_file = overview.get("source_file", "")
     extract_date = overview.get("extract_date", "")
+    generic_gtin_col = manifest.get("generic_gtin_col")
+
+    # Auto-save to tracker when this output is not yet recorded
+    if not has_tracker_entry_for(extract_date, source_file, "duplicate"):
+        tracker_entry = {
+            "analysis_type": "duplicate",
+            "extract_date": extract_date,
+            "source_file": source_file,
+            "legal_entities": overview.get("legal_entities", []),
+            "total_products": total_rows,
+            "outer_duplicates": duplicate_results["outer"]["total_duplicates"],
+            "outer_unique_duplicated": duplicate_results["outer"]["unique_duplicated_gtins"],
+            "inner_duplicates": duplicate_results["inner"]["total_duplicates"] if duplicate_results["inner"] else 0,
+            "inner_unique_duplicated": duplicate_results["inner"]["unique_duplicated_gtins"] if duplicate_results["inner"] else 0,
+            "cross_duplicates": duplicate_results["cross"]["unique_cross_gtins"] if duplicate_results["cross"] else 0,
+            "cross_total_records": duplicate_results["cross"]["total_records"] if duplicate_results["cross"] else 0,
+            "has_inner_column": gtin_inner_col is not None,
+            "generic_gtins": generic_results["total"],
+            "placeholder_gtins": placeholder_results["total"],
+            "suspect_gtins": suspect_results["total"],
+            "valid_gtins": valid_results["total"],
+        }
+        save_tracker_data(tracker_entry)
 
     st.markdown(f'<div style="text-align: center; color: #cbd5e1; margin-bottom: 0.5rem;">📁 Source: <strong style="color: #94a3b8;">{source_file}</strong> — Extract: <strong style="color: #94a3b8;">{extract_date}</strong></div>', unsafe_allow_html=True)
-
-    col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 2])
-    with col_btn2:
-        save_button_clicked = st.button(
-            "💾 Save Analysis and Report to Tracker",
-            use_container_width=True,
-            type="primary",
-            key="save_duplicate_analysis_top",
-        )
-        if save_button_clicked:
-            st.session_state["save_duplicate_requested"] = True
 
     # Filter section by Legal Entity (client-side filter on pre-computed data)
     legal_entities = overview.get("legal_entities", [])
@@ -824,37 +837,6 @@ def main():
     with col7:
         st.metric("✅ Valid GTINs", f"{valid_results['total']:,}",
                  f"{valid_results['unique_gtins']:,} unique")
-    
-    # Handle save button click (button is at the top, but logic is here after data is loaded)
-    if st.session_state.get("save_duplicate_requested", False):
-        st.session_state["save_duplicate_requested"] = False  # Reset flag
-        import sys
-        from pathlib import Path
-        sys.path.append(str(Path(__file__).parent.parent))
-        from tracker_utils import save_tracker_data
-        
-        # Prepare duplicate metrics
-        tracker_entry = {
-            "analysis_type": "duplicate",
-            "legal_entities": selected_entities,
-            "total_products": df_filtered_len,
-            "outer_duplicates": duplicate_results["outer"]["total_duplicates"],
-            "outer_unique_duplicated": duplicate_results["outer"]["unique_duplicated_gtins"],
-            "inner_duplicates": duplicate_results["inner"]["total_duplicates"] if duplicate_results["inner"] else 0,
-            "inner_unique_duplicated": duplicate_results["inner"]["unique_duplicated_gtins"] if duplicate_results["inner"] else 0,
-            "cross_duplicates": duplicate_results["cross"]["unique_cross_gtins"] if duplicate_results["cross"] else 0,
-            "cross_total_records": duplicate_results["cross"]["total_records"] if duplicate_results["cross"] else 0,
-            "has_inner_column": gtin_inner_col is not None,
-            "generic_gtins": generic_results["total"],
-            "placeholder_gtins": placeholder_results["total"],
-            "suspect_gtins": suspect_results["total"],
-            "valid_gtins": valid_results["total"]
-        }
-        
-        if save_tracker_data(tracker_entry):
-            st.success("✅ Analysis saved to tracker successfully!")
-        else:
-            st.error("❌ Error saving analysis to tracker")
     
     # Detailed Analysis
     st.markdown('<div class="section-header">📋 Detailed Analysis</div>', unsafe_allow_html=True)
