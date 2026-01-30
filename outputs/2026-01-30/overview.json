@@ -43,13 +43,13 @@
   "cross_total_records": 64249,
   "generic_total": 45263,
   "generic_unique": 48,
-  "placeholder_total": 5949,
-  "placeholder_unique": 1,
+  "placeholder_total": 6001,
+  "placeholder_unique": 3,
   "suspect_total": 7070,
   "suspect_unique": 403,
   "valid_total": 50422,
   "valid_unique": 43764,
-  "same_row_total": 5321,
+  "same_row_total": 5318,
   "inner_eq_outer_same_entity_total": 177,
-  "inner_eq_outer_other_entity_total": 7546
+  "inner_eq_outer_other_entity_total": 1161
 }

@@ -33,8 +33,8 @@
     "Sysco_ROI": 15284
   },
   "total_valid": 50422,
-  "total_invalid": 43019,
+  "total_invalid": 42967,
   "total_generic": 45221,
-  "total_placeholder": 5949,
+  "total_placeholder": 6001,
   "compliance_rate": 34.87
 }
