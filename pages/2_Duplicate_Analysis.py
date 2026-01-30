@@ -1299,51 +1299,52 @@ def main():
         st.markdown("#### Inner = Outer (non-Generic)")
         st.markdown("*GTIN Inner that equal a GTIN Outer somewhere, excluding Generic Outers. Two sub-analyses: same Legal Entity vs different Legal Entities.*")
         
-        if not inner_eq_outer_results["has_inner"]:
-            st.info("GTIN Inner column not found. This analysis requires both Outer and Inner columns.")
-        else:
-            same = inner_eq_outer_results["same_entity"]
-            other = inner_eq_outer_results["other_entity"]
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Same Legal Entity", f"{same['total']:,}", f"{same['unique_gtins']:,} unique GTINs")
-            with col2:
-                st.metric("Different Legal Entities", f"{other['total']:,}", f"{other['unique_gtins']:,} unique GTINs")
-            
-            st.markdown("##### Same Legal Entity")
-            st.markdown("*Records where this row's GTIN Inner equals a GTIN Outer (non-Generic) in the **same** Legal Entity.*")
-            if same["total"] > 0:
-                same_df = same["df"]
-                by_ent = same_df.groupby("Legal Entity").agg(
-                    records=("gtin_inner_normalized", "count"),
-                    unique_gtins=("gtin_inner_normalized", "nunique")
-                ).reset_index()
-                by_ent = by_ent.sort_values("records", ascending=False)
-                st.dataframe(by_ent, use_container_width=True, hide_index=True)
-                st.download_button("Download as Excel", data=to_excel_bytes_inner_outer_paired(same_df, df_filtered, same_entity=True), file_name="inner_eq_outer_same_entity.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_inner_eq_same")
-                with st.expander("View records (Same Legal Entity)"):
-                    disp = [c for c in ["Legal Entity", gtin_outer_col, gtin_inner_col, "gtin_outer_normalized", "gtin_inner_normalized", "SUPC", "Local Product Description"] if c in same_df.columns]
-                    st.dataframe(same_df[disp], use_container_width=True, hide_index=True)
+        with st.spinner("Chargement des données Inner = Outer (non-Generic)…"):
+            if not inner_eq_outer_results["has_inner"]:
+                st.info("GTIN Inner column not found. This analysis requires both Outer and Inner columns.")
             else:
-                st.success("No records where Inner = Outer (non-Generic) within the same Legal Entity.")
-            
-            st.markdown("##### Different Legal Entities")
-            st.markdown("*Records where this row's GTIN Inner equals a GTIN Outer (non-Generic) in a **different** Legal Entity.*")
-            if other["total"] > 0:
-                other_df = other["df"]
-                by_ent = other_df.groupby("Legal Entity").agg(
-                    records=("gtin_inner_normalized", "count"),
-                    unique_gtins=("gtin_inner_normalized", "nunique")
-                ).reset_index()
-                by_ent = by_ent.sort_values("records", ascending=False)
-                st.dataframe(by_ent, use_container_width=True, hide_index=True)
-                st.download_button("Download as Excel", data=to_excel_bytes_inner_outer_paired(other_df, df_filtered, same_entity=False), file_name="inner_eq_outer_other_entity.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_inner_eq_other")
-                with st.expander("View records (Different Legal Entities)"):
-                    disp = [c for c in ["Legal Entity", gtin_outer_col, gtin_inner_col, "gtin_outer_normalized", "gtin_inner_normalized", "SUPC", "Local Product Description"] if c in other_df.columns]
-                    st.dataframe(other_df[disp], use_container_width=True, hide_index=True)
-            else:
-                st.success("No records where Inner = Outer (non-Generic) across different Legal Entities.")
+                same = inner_eq_outer_results["same_entity"]
+                other = inner_eq_outer_results["other_entity"]
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Same Legal Entity", f"{same['total']:,}", f"{same['unique_gtins']:,} unique GTINs")
+                with col2:
+                    st.metric("Different Legal Entities", f"{other['total']:,}", f"{other['unique_gtins']:,} unique GTINs")
+                
+                st.markdown("##### Same Legal Entity")
+                st.markdown("*Records where this row's GTIN Inner equals a GTIN Outer (non-Generic) in the **same** Legal Entity.*")
+                if same["total"] > 0:
+                    same_df = same["df"]
+                    by_ent = same_df.groupby("Legal Entity").agg(
+                        records=("gtin_inner_normalized", "count"),
+                        unique_gtins=("gtin_inner_normalized", "nunique")
+                    ).reset_index()
+                    by_ent = by_ent.sort_values("records", ascending=False)
+                    st.dataframe(by_ent, use_container_width=True, hide_index=True)
+                    st.download_button("Download as Excel", data=to_excel_bytes_inner_outer_paired(same_df, df_filtered, same_entity=True), file_name="inner_eq_outer_same_entity.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_inner_eq_same")
+                    with st.expander("View records (Same Legal Entity)"):
+                        disp = [c for c in ["Legal Entity", gtin_outer_col, gtin_inner_col, "gtin_outer_normalized", "gtin_inner_normalized", "SUPC", "Local Product Description"] if c in same_df.columns]
+                        st.dataframe(same_df[disp], use_container_width=True, hide_index=True)
+                else:
+                    st.success("No records where Inner = Outer (non-Generic) within the same Legal Entity.")
+                
+                st.markdown("##### Different Legal Entities")
+                st.markdown("*Records where this row's GTIN Inner equals a GTIN Outer (non-Generic) in a **different** Legal Entity.*")
+                if other["total"] > 0:
+                    other_df = other["df"]
+                    by_ent = other_df.groupby("Legal Entity").agg(
+                        records=("gtin_inner_normalized", "count"),
+                        unique_gtins=("gtin_inner_normalized", "nunique")
+                    ).reset_index()
+                    by_ent = by_ent.sort_values("records", ascending=False)
+                    st.dataframe(by_ent, use_container_width=True, hide_index=True)
+                    st.download_button("Download as Excel", data=to_excel_bytes_inner_outer_paired(other_df, df_filtered, same_entity=False), file_name="inner_eq_outer_other_entity.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_inner_eq_other")
+                    with st.expander("View records (Different Legal Entities)"):
+                        disp = [c for c in ["Legal Entity", gtin_outer_col, gtin_inner_col, "gtin_outer_normalized", "gtin_inner_normalized", "SUPC", "Local Product Description"] if c in other_df.columns]
+                        st.dataframe(other_df[disp], use_container_width=True, hide_index=True)
+                else:
+                    st.success("No records where Inner = Outer (non-Generic) across different Legal Entities.")
     
     # Footer
     st.markdown("---")
