@@ -798,24 +798,13 @@ def main():
             st.warning("⚠️ No data found for selected Legal Entities")
         return
     
-    # Analyze duplicates on filtered data
-    with st.spinner("Analyzing duplicates..."):
+    # Run all analyses under one spinner so tabs don't appear until data is ready
+    with st.spinner("Préparation des analyses (duplicates, Generic, Placeholder, Suspect, Valid, Inner=Outer)…"):
         duplicate_results = analyze_duplicates(df_filtered, gtin_outer_col, gtin_inner_col)
-    
-    # Analyze Generic, Suspect, Placeholder, and Valid GTINs on filtered data
-    with st.spinner("Analyzing Generic GTINs..."):
         generic_results = analyze_generic_gtins(df_filtered, gtin_outer_col, generic_gtin_col)
-    
-    with st.spinner("Analyzing Placeholder GTINs..."):
         placeholder_results = analyze_placeholder_gtins(df_filtered, gtin_outer_col)
-    
-    with st.spinner("Analyzing Suspect GTINs..."):
         suspect_results = analyze_suspect_gtins(df_filtered, gtin_outer_col)
-    
-    with st.spinner("Analyzing Valid GTINs by Legal Entity..."):
         valid_results = analyze_valid_gtins_by_entity(df_filtered, gtin_outer_col)
-    
-    with st.spinner("Analyzing Inner = Outer (non-Generic)..."):
         inner_eq_outer_results = analyze_inner_equals_outer(df_filtered, gtin_outer_col, gtin_inner_col)
     
     # Overview Metrics
