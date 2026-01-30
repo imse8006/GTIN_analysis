@@ -18,6 +18,7 @@ st.set_page_config(
 
 sys.path.append(str(Path(__file__).parent.parent))
 from export_utils import to_excel_bytes
+from auth_utils import render_login_header, render_login_footer
 INPUT_FILE = "all-products-prod-2026-01-22_15.44.25.xlsx"
 
 # Generic GTIN set (same as other pages)
@@ -167,15 +168,14 @@ def check_password():
 
     if st.session_state.get("password_correct", False):
         return True
-    st.markdown('<div style="text-align: center; padding: 2rem;">', unsafe_allow_html=True)
-    st.markdown('<div style="color: #94a3b8; font-size: 2.5rem; font-weight: 700;">Generic GTIN Analysis</div>', unsafe_allow_html=True)
+    render_login_header("Generic GTIN Analysis")
     st.text_input("Password", type="password", on_change=password_entered, key="password_gen_gtin", label_visibility="visible")
     if "password_gen_gtin" in st.session_state and st.session_state.get("password_correct") is False:
         st.error("Incorrect password")
     if st.session_state.get("password_correct", False):
-        st.markdown('</div>', unsafe_allow_html=True)
+        render_login_footer()
         st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
+    render_login_footer()
     return False
 
 

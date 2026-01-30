@@ -17,6 +17,7 @@ OUTLOOK_AVAILABLE = False
 OUTLOOK_ERROR_MSG = None
 import sys
 import platform
+from auth_utils import render_login_header, render_login_footer
 
 # Check if running on Windows
 IS_WINDOWS = platform.system() == "Windows"
@@ -318,70 +319,16 @@ def check_password():
         else:
             st.session_state["password_correct"] = False
     
-    # Simple CSS for clean login page
-    st.markdown("""
-        <style>
-        .login-wrapper {
-            padding: 2rem 0;
-            display: flex;
-            justify-content: center;
-        }
-        .login-card {
-            max-width: 400px;
-            width: 100%;
-            text-align: center;
-        }
-        .login-title {
-            color: #60a5fa;
-            font-size: 2.5rem;
-            font-weight: 700;
-            margin-bottom: 0.5rem;
-            text-align: center;
-        }
-        .login-subtitle {
-            color: #94a3b8;
-            font-size: 0.9rem;
-            text-align: center;
-            margin-bottom: 1.5rem;
-        }
-        .stTextInput {
-            max-width: 300px;
-            margin: 0 auto;
-        }
-        </style>
-    """, unsafe_allow_html=True)
-    
-    # Check if password is already correct - return immediately without showing anything
     if st.session_state.get("password_correct", False):
         return True
-    
-    # Show login form (first run or incorrect password)
-    st.markdown('<div class="login-wrapper">', unsafe_allow_html=True)
-    st.markdown('<div class="login-card">', unsafe_allow_html=True)
-    
-    st.markdown('<div class="login-title">GTIN Quality Dashboard</div>', unsafe_allow_html=True)
-    st.markdown('<div class="login-subtitle">MDM Analysis Portal</div>', unsafe_allow_html=True)
-    
-    password = st.text_input(
-        "Password",
-        type="password",
-        on_change=password_entered,
-        key="password",
-        label_visibility="visible"
-    )
-    
-    # Check if password was just entered and was incorrect
+    render_login_header("GTIN Quality Dashboard")
+    st.text_input("Password", type="password", on_change=password_entered, key="password", label_visibility="visible")
     if "password" in st.session_state and st.session_state.get("password_correct", None) == False:
         st.error("Incorrect password")
-    
-    # If password was just entered correctly, rerun to refresh page
     if st.session_state.get("password_correct", False):
-        st.markdown('</div>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        render_login_footer()
         st.rerun()
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+    render_login_footer()
     return False
 
 

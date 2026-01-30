@@ -7,6 +7,7 @@ import sys
 
 # Import tracker utilities
 sys.path.append(str(Path(__file__).parent.parent))
+from auth_utils import render_login_header, render_login_footer
 from tracker_utils import (
     load_tracker_data,
     get_quality_tracker_data,
@@ -69,19 +70,16 @@ def check_password():
         else:
             st.session_state["password_correct"] = False
     
-    if "password_correct" not in st.session_state:
-        st.markdown('<div style="text-align: center; padding: 2rem;">', unsafe_allow_html=True)
-        st.markdown('<div style="color: #60a5fa; font-size: 2.5rem; font-weight: 700; margin-bottom: 0.5rem;">GTIN Tracker</div>', unsafe_allow_html=True)
-        password = st.text_input("Password", type="password", on_change=password_entered, key="password", label_visibility="visible")
-        if "password" in st.session_state and st.session_state.get("password_correct", None) == False:
-            st.error("Incorrect password")
-        st.markdown('</div>', unsafe_allow_html=True)
-        if st.session_state.get("password_correct", False):
-            st.rerun()
-        return False
-    
     if st.session_state.get("password_correct", False):
         return True
+    render_login_header("GTIN Tracker")
+    st.text_input("Password", type="password", on_change=password_entered, key="password", label_visibility="visible")
+    if "password" in st.session_state and st.session_state.get("password_correct", None) == False:
+        st.error("Incorrect password")
+    if st.session_state.get("password_correct", False):
+        render_login_footer()
+        st.rerun()
+    render_login_footer()
     return False
 
 

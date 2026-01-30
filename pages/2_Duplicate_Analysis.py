@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 from export_utils import to_excel_bytes, to_excel_bytes_inner_outer_paired
+from auth_utils import render_login_header, render_login_footer
 
 # Import GTIN classification functions
 try:
@@ -685,19 +686,16 @@ def check_password():
         else:
             st.session_state["password_correct"] = False
     
-    if "password_correct" not in st.session_state:
-        st.markdown('<div style="text-align: center; padding: 2rem;">', unsafe_allow_html=True)
-        st.markdown('<div style="color: #94a3b8; font-size: 2.5rem; font-weight: 700; margin-bottom: 0.5rem;">GTIN Duplicate Analysis</div>', unsafe_allow_html=True)
-        password = st.text_input("Password", type="password", on_change=password_entered, key="password", label_visibility="visible")
-        if "password" in st.session_state and st.session_state.get("password_correct", None) == False:
-            st.error("Incorrect password")
-        st.markdown('</div>', unsafe_allow_html=True)
-        if st.session_state.get("password_correct", False):
-            st.rerun()
-        return False
-    
     if st.session_state.get("password_correct", False):
         return True
+    render_login_header("GTIN Duplicate Analysis")
+    st.text_input("Password", type="password", on_change=password_entered, key="password", label_visibility="visible")
+    if "password" in st.session_state and st.session_state.get("password_correct", None) == False:
+        st.error("Incorrect password")
+    if st.session_state.get("password_correct", False):
+        render_login_footer()
+        st.rerun()
+    render_login_footer()
     return False
 
 
