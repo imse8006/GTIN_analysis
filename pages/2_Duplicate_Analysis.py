@@ -11,8 +11,13 @@ from collections import Counter
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
-from export_utils import to_excel_bytes, to_excel_bytes_inner_outer_paired
+from export_utils import to_excel_bytes
 from auth_utils import render_login_form
+from duplicate_analysis_backend import (
+    list_output_dates,
+    load_output_results,
+    OUTPUTS_BASE,
+)
 
 # Import GTIN classification functions
 try:
@@ -682,54 +687,71 @@ def main():
     
     # Header
     st.markdown('<h1 class="main-header">🔍 GTIN Duplicate Analysis</h1>', unsafe_allow_html=True)
-    st.markdown(f'<div style="text-align: center; color: #cbd5e1; margin-bottom: 0.5rem;">📁 Source file: <strong style="color: #94a3b8;">{INPUT_FILE}</strong></div>', unsafe_allow_html=True)
-    
-    # Save Analysis button - positioned right after source file with improved design
+
+    # Load from pre-computed outputs (batch writes to outputs/YYYY-MM-DD/)
+    output_dates = list_output_dates()
+    if not output_dates:
+        st.info(
+            f"Aucun résultat pré-calculé. Exécutez le batch puis rechargez cette page:\n\n"
+            f"`python run_duplicate_analysis_batch.py [fichier.xlsx]`\n\n"
+            f"Les résultats seront écrits dans `{OUTPUTS_BASE}/YYYY-MM-DD/`."
+        )
+        st.code("python run_duplicate_analysis_batch.py all-products-prod-2026-01-22_15.44.25.xlsx", language="bash")
+        return
+
+    # Select extract date
+    date_options = [f"{d[0]} ({d[1]})" for d in output_dates]
+    date_paths = {date_options[i]: output_dates[i][1] for i in range(len(output_dates))}
+    selected_date_label = st.selectbox(
+        "**Extract date**",
+        date_options,
+        index=0,
+        help="Dernier run en premier. Lancez le batch pour ajouter une date.",
+        key="dup_select_date",
+    )
+    output_dir = date_paths[selected_date_label]
+
+    with st.spinner("Chargement des résultats…"):
+        loaded = load_output_results(output_dir, selected_entities=None)
+    if loaded is None:
+        st.error("Impossible de charger les résultats pour cette date.")
+        return
+    overview, manifest, duplicate_results, generic_results, placeholder_results, suspect_results, valid_results, inner_eq_outer_results, total_rows, gtin_outer_col, gtin_inner_col = loaded
+    source_file = overview.get("source_file", "")
+    extract_date = overview.get("extract_date", "")
+
+    st.markdown(f'<div style="text-align: center; color: #cbd5e1; margin-bottom: 0.5rem;">📁 Source: <strong style="color: #94a3b8;">{source_file}</strong> — Extract: <strong style="color: #94a3b8;">{extract_date}</strong></div>', unsafe_allow_html=True)
+
     col_btn1, col_btn2, col_btn3 = st.columns([2, 1, 2])
     with col_btn2:
         save_button_clicked = st.button(
             "💾 Save Analysis and Report to Tracker",
             use_container_width=True,
             type="primary",
-            key="save_duplicate_analysis_top"
+            key="save_duplicate_analysis_top",
         )
         if save_button_clicked:
             st.session_state["save_duplicate_requested"] = True
-    
-    # Load data (cached by file path + mtime: new file each week invalidates cache)
-    file_mtime = os.path.getmtime(INPUT_FILE) if os.path.isfile(INPUT_FILE) else 0.0
-    with st.spinner("Loading data..."):
-        result = load_duplicate_data(INPUT_FILE, file_mtime)
-        if result[0] is None:
-            return
-        df, gtin_outer_col, gtin_inner_col, generic_gtin_col = result
-    
-    total_rows = len(df)
-    
-    # Filter section by Legal Entity
+
+    # Filter section by Legal Entity (client-side filter on pre-computed data)
+    legal_entities = overview.get("legal_entities", [])
     st.markdown('<div class="filter-section">', unsafe_allow_html=True)
     st.markdown("### 🔍 Filters")
-    
-    search_query = st.text_input("🔍 Search SUPC or GTIN", placeholder="e.g. 12345 or 08701234567890", key="search_supc_gtin_dup", help="Exact match on SUPC or GTIN (Outer, Inner, normalized).")
-    
-    legal_entities = sorted(df["Legal Entity"].unique())
-    
-    # Initialize session state for selected entities
+
     if "selected_entities_duplicate" not in st.session_state:
         st.session_state.selected_entities_duplicate = legal_entities
-    
+
     col1, col2 = st.columns([4, 1])
     with col1:
         selected_entities = st.multiselect(
             "**Select Legal Entities**",
             legal_entities,
             default=st.session_state.selected_entities_duplicate,
-            help="Select one or more Legal Entities to analyze"
+            help="Filtrer les résultats affichés par Legal Entity.",
         )
         st.session_state.selected_entities_duplicate = selected_entities
-    
+
     with col2:
-        # Stack buttons vertically, aligned with multiselect
         st.markdown('<div style="padding-top: 1.5rem;">', unsafe_allow_html=True)
         if st.button("🔄 Reset to All", use_container_width=True, key="reset_all_duplicate"):
             st.session_state.selected_entities_duplicate = legal_entities
@@ -737,70 +759,23 @@ def main():
         if st.button("Reset", use_container_width=True, key="reset_duplicate"):
             st.session_state.selected_entities_duplicate = []
             st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Filter data by selected entities
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
     if not selected_entities:
         st.warning("⚠️ Please select at least one Legal Entity")
         return
-    
-    df_filtered = df[df["Legal Entity"].isin(selected_entities)].copy()
-    
-    # Search filter (SUPC or GTIN, exact match)
-    if search_query and str(search_query).strip():
-        q = str(search_query).strip()
-        parts = []
-        if "SUPC" in df_filtered.columns:
-            parts.append(df_filtered["SUPC"].fillna("").astype(str).str.strip() == q)
-        parts.append(df_filtered[gtin_outer_col].fillna("").astype(str).str.strip() == q)
-        if "gtin_outer_normalized" in df_filtered.columns:
-            parts.append(df_filtered["gtin_outer_normalized"].fillna("").astype(str).str.strip() == q)
-        if gtin_inner_col and gtin_inner_col in df_filtered.columns:
-            parts.append(df_filtered[gtin_inner_col].fillna("").astype(str).str.strip() == q)
-        if gtin_inner_col and "gtin_inner_normalized" in df_filtered.columns:
-            parts.append(df_filtered["gtin_inner_normalized"].fillna("").astype(str).str.strip() == q)
-        if parts:
-            mask = parts[0]
-            for p in parts[1:]:
-                mask = mask | p
-            df_filtered = df_filtered[mask].copy()
-    
-    if len(df_filtered) == 0:
-        if search_query and str(search_query).strip():
-            st.warning("No results for your search.")
-        else:
-            st.warning("⚠️ No data found for selected Legal Entities")
+
+    # Re-load with entity filter so metrics/tables reflect selection
+    with st.spinner("Application du filtre Legal Entity…"):
+        loaded = load_output_results(output_dir, selected_entities=selected_entities)
+    if loaded is None:
         return
-    
-    # Cache key: file identity (mtime) + filters. New file each week invalidates; same file + same filters = reuse.
-    _cache_key = (file_mtime, len(df_filtered), total_rows, tuple(sorted(selected_entities)), gtin_outer_col or "", gtin_inner_col or "")
-    _cached = st.session_state.get("_dup_analysis_cache")
-    if _cached is not None and _cached.get("key") == _cache_key:
-        duplicate_results = _cached["duplicate_results"]
-        generic_results = _cached["generic_results"]
-        placeholder_results = _cached["placeholder_results"]
-        suspect_results = _cached["suspect_results"]
-        valid_results = _cached["valid_results"]
-        inner_eq_outer_results = _cached["inner_eq_outer_results"]
-    else:
-        with st.spinner("Préparation des analyses (duplicates, Generic, Placeholder, Suspect, Valid, Inner=Outer)…"):
-            duplicate_results = analyze_duplicates(df_filtered, gtin_outer_col, gtin_inner_col)
-            generic_results = analyze_generic_gtins(df_filtered, gtin_outer_col, generic_gtin_col)
-            placeholder_results = analyze_placeholder_gtins(df_filtered, gtin_outer_col)
-            suspect_results = analyze_suspect_gtins(df_filtered, gtin_outer_col)
-            valid_results = analyze_valid_gtins_by_entity(df_filtered, gtin_outer_col)
-            inner_eq_outer_results = analyze_inner_equals_outer(df_filtered, gtin_outer_col, gtin_inner_col)
-        st.session_state["_dup_analysis_cache"] = {
-            "key": _cache_key,
-            "duplicate_results": duplicate_results,
-            "generic_results": generic_results,
-            "placeholder_results": placeholder_results,
-            "suspect_results": suspect_results,
-            "valid_results": valid_results,
-            "inner_eq_outer_results": inner_eq_outer_results,
-        }
+    overview, _, duplicate_results, generic_results, placeholder_results, suspect_results, valid_results, inner_eq_outer_results, total_rows, gtin_outer_col, gtin_inner_col = loaded
+
+    entity_counts = overview.get("entity_total_products", {})
+    df_filtered_len = sum(entity_counts.get(e, 0) for e in selected_entities) if selected_entities else total_rows
     
     # Overview Metrics
     st.markdown('<div class="section-header">📊 Overview</div>', unsafe_allow_html=True)
@@ -808,13 +783,13 @@ def main():
     col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
     
     with col1:
-        st.metric("📦 Total Products", f"{len(df_filtered):,}", 
+        st.metric("📦 Total Products", f"{df_filtered_len:,}", 
                  f"Filtered from {total_rows:,} total")
     
     with col2:
         outer_dup = duplicate_results["outer"]["total_duplicates"]
         st.metric("🔄 Outer Duplicates", f"{outer_dup:,}", 
-                 f"{outer_dup/len(df_filtered)*100:.1f}%" if len(df_filtered) > 0 else "0%")
+                 f"{outer_dup/df_filtered_len*100:.1f}%" if df_filtered_len > 0 else "0%")
     
     with col3:
         if duplicate_results["cross"]:
@@ -855,7 +830,7 @@ def main():
         tracker_entry = {
             "analysis_type": "duplicate",
             "legal_entities": selected_entities,
-            "total_products": len(df_filtered),
+            "total_products": df_filtered_len,
             "outer_duplicates": duplicate_results["outer"]["total_duplicates"],
             "outer_unique_duplicated": duplicate_results["outer"]["unique_duplicated_gtins"],
             "inner_duplicates": duplicate_results["inner"]["total_duplicates"] if duplicate_results["inner"] else 0,
@@ -1322,7 +1297,13 @@ def main():
                     ).reset_index()
                     by_ent = by_ent.sort_values("records", ascending=False)
                     st.dataframe(by_ent, use_container_width=True, hide_index=True)
-                    st.download_button("Download as Excel", data=to_excel_bytes_inner_outer_paired(same_df, df_filtered, same_entity=True), file_name="inner_eq_outer_same_entity.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_inner_eq_same")
+                    _same_entity_path = os.path.join(output_dir, "inner_eq_outer_same_entity.xlsx")
+                    if set(selected_entities or []) == set(legal_entities) and os.path.isfile(_same_entity_path):
+                        with open(_same_entity_path, "rb") as _f:
+                            _same_entity_bytes = _f.read()
+                    else:
+                        _same_entity_bytes = to_excel_bytes(same_df)
+                    st.download_button("Download as Excel", data=_same_entity_bytes, file_name="inner_eq_outer_same_entity.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_inner_eq_same")
                     with st.expander("View records (Same Legal Entity)"):
                         disp = [c for c in ["Legal Entity", gtin_outer_col, gtin_inner_col, "gtin_outer_normalized", "gtin_inner_normalized", "SUPC", "Local Product Description"] if c in same_df.columns]
                         st.dataframe(same_df[disp], use_container_width=True, hide_index=True)
@@ -1339,7 +1320,13 @@ def main():
                     ).reset_index()
                     by_ent = by_ent.sort_values("records", ascending=False)
                     st.dataframe(by_ent, use_container_width=True, hide_index=True)
-                    st.download_button("Download as Excel", data=to_excel_bytes_inner_outer_paired(other_df, df_filtered, same_entity=False), file_name="inner_eq_outer_other_entity.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_inner_eq_other")
+                    _other_entity_path = os.path.join(output_dir, "inner_eq_outer_other_entity.xlsx")
+                    if set(selected_entities or []) == set(legal_entities) and os.path.isfile(_other_entity_path):
+                        with open(_other_entity_path, "rb") as _f:
+                            _other_entity_bytes = _f.read()
+                    else:
+                        _other_entity_bytes = to_excel_bytes(other_df)
+                    st.download_button("Download as Excel", data=_other_entity_bytes, file_name="inner_eq_outer_other_entity.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_inner_eq_other")
                     with st.expander("View records (Different Legal Entities)"):
                         disp = [c for c in ["Legal Entity", gtin_outer_col, gtin_inner_col, "gtin_outer_normalized", "gtin_inner_normalized", "SUPC", "Local Product Description"] if c in other_df.columns]
                         st.dataframe(other_df[disp], use_container_width=True, hide_index=True)
@@ -1351,8 +1338,8 @@ def main():
     st.markdown(
         f"<div style='text-align: center; color: #cbd5e1; padding: 1rem;'>"
         f"📅 Analysis generated on {date.today().strftime('%B %d, %Y')} | "
-        f"Filtered: <strong style='color: #94a3b8;'>{len(df_filtered):,}</strong> products from <strong style='color: #94a3b8;'>{total_rows:,}</strong> total | "
-        f"Legal Entities: <strong style='color: #94a3b8;'>{', '.join(selected_entities)}</strong>"
+        f"Filtered: <strong style='color: #94a3b8;'>{df_filtered_len:,}</strong> products from <strong style='color: #94a3b8;'>{total_rows:,}</strong> total | "
+        f"Legal Entities: <strong style='color: #94a3b8;'>{', '.join(selected_entities) if selected_entities else '—'}</strong>"
         f"</div>",
         unsafe_allow_html=True
     )
