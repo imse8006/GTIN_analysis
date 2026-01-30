@@ -10,7 +10,7 @@ from collections import Counter
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
-from export_utils import to_excel_bytes
+from export_utils import to_excel_bytes, to_excel_bytes_inner_outer_paired
 
 # Import GTIN classification functions
 try:
@@ -1337,7 +1337,7 @@ def main():
                 ).reset_index()
                 by_ent = by_ent.sort_values("records", ascending=False)
                 st.dataframe(by_ent, use_container_width=True, hide_index=True)
-                st.download_button("Download as Excel", data=to_excel_bytes(same_df), file_name="inner_eq_outer_same_entity.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_inner_eq_same")
+                st.download_button("Download as Excel", data=to_excel_bytes_inner_outer_paired(same_df, df_filtered, same_entity=True), file_name="inner_eq_outer_same_entity.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_inner_eq_same")
                 with st.expander("View records (Same Legal Entity)"):
                     disp = [c for c in ["Legal Entity", gtin_outer_col, gtin_inner_col, "gtin_outer_normalized", "gtin_inner_normalized", "SUPC", "Local Product Description"] if c in same_df.columns]
                     st.dataframe(same_df[disp], use_container_width=True, hide_index=True)
@@ -1354,7 +1354,7 @@ def main():
                 ).reset_index()
                 by_ent = by_ent.sort_values("records", ascending=False)
                 st.dataframe(by_ent, use_container_width=True, hide_index=True)
-                st.download_button("Download as Excel", data=to_excel_bytes(other_df), file_name="inner_eq_outer_other_entity.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_inner_eq_other")
+                st.download_button("Download as Excel", data=to_excel_bytes_inner_outer_paired(other_df, df_filtered, same_entity=False), file_name="inner_eq_outer_other_entity.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_inner_eq_other")
                 with st.expander("View records (Different Legal Entities)"):
                     disp = [c for c in ["Legal Entity", gtin_outer_col, gtin_inner_col, "gtin_outer_normalized", "gtin_inner_normalized", "SUPC", "Local Product Description"] if c in other_df.columns]
                     st.dataframe(other_df[disp], use_container_width=True, hide_index=True)
