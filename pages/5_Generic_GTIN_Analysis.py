@@ -198,8 +198,9 @@ def main():
         st.info("No Generic GTINs in the selected Legal Entities.")
         return
 
-    conforming_count = int(by_ent["conforming"].sum()) if "conforming" in by_ent.columns else 0
-    non_conforming_count = int(by_ent["non_conforming"].sum()) if "non_conforming" in by_ent.columns else len(non_conforming_df)
+    # Columns are read as str from Excel; convert to numeric before sum (else .sum() concatenates strings)
+    conforming_count = int(pd.to_numeric(by_ent["conforming"], errors="coerce").fillna(0).sum()) if "conforming" in by_ent.columns else 0
+    non_conforming_count = int(pd.to_numeric(by_ent["non_conforming"], errors="coerce").fillna(0).sum()) if "non_conforming" in by_ent.columns else len(non_conforming_df)
     total_gen = len(generic_df)
     conforming_pct = (conforming_count / total_gen * 100) if total_gen > 0 else 0
 
