@@ -562,18 +562,17 @@ def analyze_inner_equals_outer(df, gtin_outer_col, gtin_inner_col):
             "has_inner": True,
         }
 
-    # For each row: entities where this Inner value appears as Outer
-    def classify_row(row):
-        inner_k = row["_inner_key"]
-        row_entity = row["Legal Entity"]
+    # For each row: entities where this Inner value appears as Outer (loop faster than apply(axis=1))
+    buckets = []
+    for inner_k, row_entity in zip(with_inner["_inner_key"], with_inner["Legal Entity"]):
         entities = entities_by_outer_gtin.get(inner_k, set())
         if not entities:
-            return "none"
-        if entities == {row_entity}:
-            return "same_entity"
-        return "other_entity"
-
-    with_inner["_bucket"] = with_inner.apply(classify_row, axis=1)
+            buckets.append("none")
+        elif entities == {row_entity}:
+            buckets.append("same_entity")
+        else:
+            buckets.append("other_entity")
+    with_inner["_bucket"] = buckets
     same_entity_df = with_inner[with_inner["_bucket"] == "same_entity"].drop(
         columns=["_inner_key", "_bucket"], errors="ignore"
     )
