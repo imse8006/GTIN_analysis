@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import streamlit as st
 import plotly.express as px
@@ -183,9 +184,9 @@ def normalize_gtin(value):
 
 
 @st.cache_data
-def load_duplicate_data():
-    """Load data and find GTIN Outer, Inner, and Generic GTIN columns."""
-    df = pd.read_excel(INPUT_FILE, dtype=str)
+def load_duplicate_data(file_path: str, file_mtime: float):
+    """Load data and find GTIN Outer, Inner, and Generic GTIN columns. Cached by (path, mtime) so cache invalidates when file is updated."""
+    df = pd.read_excel(file_path, dtype=str)
     
     # Find GTIN-Outer column
     gtin_outer_col = None
@@ -721,9 +722,10 @@ def main():
         if save_button_clicked:
             st.session_state["save_duplicate_requested"] = True
     
-    # Load data
-    with st.spinner("Loading data and analyzing duplicates..."):
-        result = load_duplicate_data()
+    # Load data (cached by file path + mtime: new file each week invalidates cache)
+    file_mtime = os.path.getmtime(INPUT_FILE) if os.path.isfile(INPUT_FILE) else 0.0
+    with st.spinner("Loading data..."):
+        result = load_duplicate_data(INPUT_FILE, file_mtime)
         if result[0] is None:
             return
         df, gtin_outer_col, gtin_inner_col, generic_gtin_col = result
@@ -798,14 +800,33 @@ def main():
             st.warning("⚠️ No data found for selected Legal Entities")
         return
     
-    # Run all analyses under one spinner so tabs don't appear until data is ready
-    with st.spinner("Préparation des analyses (duplicates, Generic, Placeholder, Suspect, Valid, Inner=Outer)…"):
-        duplicate_results = analyze_duplicates(df_filtered, gtin_outer_col, gtin_inner_col)
-        generic_results = analyze_generic_gtins(df_filtered, gtin_outer_col, generic_gtin_col)
-        placeholder_results = analyze_placeholder_gtins(df_filtered, gtin_outer_col)
-        suspect_results = analyze_suspect_gtins(df_filtered, gtin_outer_col)
-        valid_results = analyze_valid_gtins_by_entity(df_filtered, gtin_outer_col)
-        inner_eq_outer_results = analyze_inner_equals_outer(df_filtered, gtin_outer_col, gtin_inner_col)
+    # Cache key: file identity (mtime) + filters. New file each week invalidates; same file + same filters = reuse.
+    _cache_key = (file_mtime, len(df_filtered), total_rows, tuple(sorted(selected_entities)), gtin_outer_col or "", gtin_inner_col or "")
+    _cached = st.session_state.get("_dup_analysis_cache")
+    if _cached is not None and _cached.get("key") == _cache_key:
+        duplicate_results = _cached["duplicate_results"]
+        generic_results = _cached["generic_results"]
+        placeholder_results = _cached["placeholder_results"]
+        suspect_results = _cached["suspect_results"]
+        valid_results = _cached["valid_results"]
+        inner_eq_outer_results = _cached["inner_eq_outer_results"]
+    else:
+        with st.spinner("Préparation des analyses (duplicates, Generic, Placeholder, Suspect, Valid, Inner=Outer)…"):
+            duplicate_results = analyze_duplicates(df_filtered, gtin_outer_col, gtin_inner_col)
+            generic_results = analyze_generic_gtins(df_filtered, gtin_outer_col, generic_gtin_col)
+            placeholder_results = analyze_placeholder_gtins(df_filtered, gtin_outer_col)
+            suspect_results = analyze_suspect_gtins(df_filtered, gtin_outer_col)
+            valid_results = analyze_valid_gtins_by_entity(df_filtered, gtin_outer_col)
+            inner_eq_outer_results = analyze_inner_equals_outer(df_filtered, gtin_outer_col, gtin_inner_col)
+        st.session_state["_dup_analysis_cache"] = {
+            "key": _cache_key,
+            "duplicate_results": duplicate_results,
+            "generic_results": generic_results,
+            "placeholder_results": placeholder_results,
+            "suspect_results": suspect_results,
+            "valid_results": valid_results,
+            "inner_eq_outer_results": inner_eq_outer_results,
+        }
     
     # Overview Metrics
     st.markdown('<div class="section-header">📊 Overview</div>', unsafe_allow_html=True)
