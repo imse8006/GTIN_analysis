@@ -23,6 +23,12 @@ from export_utils import to_excel_bytes
 from auth_utils import render_login_form
 from duplicate_analysis_backend import list_output_dates, load_generic_results, load_manifest, OUTPUTS_BASE
 
+
+@st.cache_data(ttl=3600)
+def _cached_load_generic_results(output_dir: str):
+    """Cache Generic GTIN results (avoids re-reading Excel on every rerun)."""
+    return load_generic_results(output_dir)
+
 # Generic GTIN set (same as other pages)
 GENERIC_GTINS = {
     "10000000000009", "20000000000009", "30000000000009", "40000000000009",
@@ -146,7 +152,7 @@ def main():
     output_dir = date_paths[selected_date_label]
 
     with st.spinner("Chargement des données…"):
-        data = load_generic_results(output_dir)
+        data = _cached_load_generic_results(output_dir)
     if data is None:
         st.error("Impossible de charger les résultats Generic GTIN pour cette date (ou aucun Generic dans les données).")
         return

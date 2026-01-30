@@ -4,10 +4,14 @@ No Streamlit dependency. Used by run_duplicate_analysis_batch.py and by Streamli
 """
 import json
 import os
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from datetime import datetime
 from collections import Counter
+from typing import Optional, Callable
 
+import numpy as np
 import pandas as pd
 
 try:
@@ -78,30 +82,44 @@ def load_duplicate_data_from_path(file_path: str):
     if gtin_outer_col is None:
         return None, None, None, None
 
-    def get_gtin_outer_normalized(row):
-        has_outer = gtin_outer_col and pd.notna(row.get(gtin_outer_col)) and str(row.get(gtin_outer_col)).strip() not in ["", "nan"]
-        has_generic = generic_gtin_col and pd.notna(row.get(generic_gtin_col)) and str(row.get(generic_gtin_col)).strip() not in ["", "nan"]
-        if has_outer and has_generic:
-            return normalize_gtin(row[gtin_outer_col])
-        elif has_outer:
-            return normalize_gtin(row[gtin_outer_col])
-        elif has_generic:
-            return normalize_gtin(row[generic_gtin_col])
-        return None
-
-    df["gtin_outer_normalized"] = df.apply(get_gtin_outer_normalized, axis=1)
-    df["gtin_source"] = df.apply(
-        lambda r: "GTIN Outer (both filled)" if (gtin_outer_col and pd.notna(r.get(gtin_outer_col)) and generic_gtin_col and pd.notna(r.get(generic_gtin_col))) else
-                 ("GTIN Outer" if (gtin_outer_col and pd.notna(r.get(gtin_outer_col)) and str(r.get(gtin_outer_col)).strip() not in ["", "nan"]) else
-                  ("Generic GTIN" if (generic_gtin_col and pd.notna(r.get(generic_gtin_col))) else "None")),
-        axis=1
-    )
+    # Vectorized: avoid 144k apply(axis=1)
+    outer_vals = df[gtin_outer_col].fillna("").astype(str).str.strip()
+    has_outer = df[gtin_outer_col].notna() & (outer_vals != "") & (outer_vals.str.lower() != "nan")
+    if generic_gtin_col and generic_gtin_col in df.columns:
+        generic_vals = df[generic_gtin_col].fillna("").astype(str).str.strip()
+        has_generic = df[generic_gtin_col].notna() & (generic_vals != "") & (generic_vals.str.lower() != "nan")
+    else:
+        has_generic = pd.Series(False, index=df.index)
+    # Normalize only unique values then map
+    use_outer = has_outer
+    use_generic = has_generic & ~has_outer
+    vals_to_norm = set()
+    if use_outer.any():
+        vals_to_norm.update(df.loc[use_outer, gtin_outer_col].dropna().unique().tolist())
+    if use_generic.any() and generic_gtin_col:
+        vals_to_norm.update(df.loc[use_generic, generic_gtin_col].dropna().unique().tolist())
+    norm_map = {v: normalize_gtin(v) for v in vals_to_norm}
+    gtin_outer_norm = pd.Series(None, index=df.index, dtype=object)
+    gtin_outer_norm[use_outer] = df.loc[use_outer, gtin_outer_col].map(norm_map)
+    gtin_outer_norm[use_generic] = df.loc[use_generic, generic_gtin_col].map(norm_map) if generic_gtin_col else None
+    df["gtin_outer_normalized"] = gtin_outer_norm
+    df["gtin_source"] = np.where(has_outer & has_generic, "GTIN Outer (both filled)",
+                                 np.where(has_outer, "GTIN Outer", np.where(has_generic, "Generic GTIN", "None")))
     if gtin_inner_col:
-        df["gtin_inner_normalized"] = df[gtin_inner_col].apply(normalize_gtin)
+        uniq_inner = df[gtin_inner_col].dropna().unique()
+        inner_norm_map = {v: normalize_gtin(v) for v in uniq_inner}
+        df["gtin_inner_normalized"] = df[gtin_inner_col].map(inner_norm_map)
     else:
         df["gtin_inner_normalized"] = None
 
     return df, gtin_outer_col, gtin_inner_col, generic_gtin_col
+
+
+def _classify_column_unique_then_map(series):
+    """Classify only unique values then map back. Much faster than apply on 144k rows."""
+    uniq = series.dropna().unique()
+    status_map = {v: classify_gtin_status(v) for v in uniq}
+    return series.map(status_map).fillna("MISSING")
 
 
 def is_suspect_gtin(gtin):
@@ -150,7 +168,7 @@ def analyze_duplicates(df, gtin_outer_col, gtin_inner_col):
 
 def analyze_generic_gtins(df, gtin_outer_col, generic_gtin_col=None):
     df = df.copy()
-    df["gtin_status"] = df["gtin_outer_normalized"].apply(lambda x: classify_gtin_status(x) if x is not None else "MISSING")
+    df["gtin_status"] = _classify_column_unique_then_map(df["gtin_outer_normalized"])
     if generic_gtin_col and generic_gtin_col in df.columns:
         generic_df = df[df[generic_gtin_col].notna() & (df[generic_gtin_col].astype(str).str.strip() != "")].copy()
         if len(generic_df) == 0:
@@ -165,17 +183,18 @@ def analyze_generic_gtins(df, gtin_outer_col, generic_gtin_col=None):
     by_entity = generic_df.groupby("Legal Entity").agg({"gtin_outer_normalized": ["count", "nunique"]}).reset_index()
     by_entity.columns = ["Legal Entity", "Total Records", "Unique Generic GTINs"]
     by_entity = by_entity.sort_values("Total Records", ascending=False)
-    duplicate_summary = []
     if duplicate_count > 0:
-        for gtin in generic_duplicates["gtin_outer_normalized"].unique():
-            gtin_records = generic_duplicates[generic_duplicates["gtin_outer_normalized"] == gtin]
-            duplicate_summary.append({
-                "Generic GTIN": gtin,
-                "Occurrences": len(gtin_records),
-                "Legal Entities": ", ".join(sorted(gtin_records["Legal Entity"].unique().tolist())),
-                "Entity Count": len(gtin_records["Legal Entity"].unique()),
-            })
-        duplicate_summary_df = pd.DataFrame(duplicate_summary).sort_values("Occurrences", ascending=False)
+        gb = generic_duplicates.groupby("gtin_outer_normalized", dropna=False)
+        duplicate_summary_df = gb.agg(
+            Occurrences=("gtin_outer_normalized", "count"),
+            Legal_Entities=("Legal Entity", lambda s: ", ".join(sorted(s.dropna().unique().astype(str)))),
+            Entity_Count=("Legal Entity", "nunique"),
+        ).reset_index().rename(columns={
+            "gtin_outer_normalized": "Generic GTIN",
+            "Legal_Entities": "Legal Entities",
+            "Entity_Count": "Entity Count",
+        })
+        duplicate_summary_df = duplicate_summary_df.sort_values("Occurrences", ascending=False)
     else:
         duplicate_summary_df = pd.DataFrame()
     return {
@@ -192,7 +211,7 @@ def analyze_generic_gtins(df, gtin_outer_col, generic_gtin_col=None):
 
 def analyze_placeholder_gtins(df, gtin_outer_col):
     df = df.copy()
-    df["gtin_status"] = df["gtin_outer_normalized"].apply(lambda x: classify_gtin_status(x) if x is not None else "MISSING")
+    df["gtin_status"] = _classify_column_unique_then_map(df["gtin_outer_normalized"])
     placeholder_df = df[df["gtin_status"] == "EXPLICIT_BLOCKED"].copy()
     if len(placeholder_df) == 0:
         return {"total": 0, "unique_gtins": 0, "by_entity": pd.DataFrame(), "gtin_list": [], "full_df": pd.DataFrame()}
@@ -210,8 +229,10 @@ def analyze_placeholder_gtins(df, gtin_outer_col):
 
 def analyze_suspect_gtins(df, gtin_outer_col):
     df = df.copy()
-    df["is_suspect"] = df[gtin_outer_col].apply(is_suspect_gtin)
-    df["gtin_status"] = df["gtin_outer_normalized"].apply(lambda x: classify_gtin_status(x) if x is not None else "MISSING")
+    uniq_outer = df[gtin_outer_col].dropna().unique()
+    suspect_map = {v: is_suspect_gtin(v) for v in uniq_outer}
+    df["is_suspect"] = df[gtin_outer_col].map(suspect_map).fillna(False)
+    df["gtin_status"] = _classify_column_unique_then_map(df["gtin_outer_normalized"])
     suspect_df = df[(df["is_suspect"] == True) & (df["gtin_status"] != "GENERIC_GTIN")].copy()
     if len(suspect_df) == 0:
         return {"total": 0, "unique_gtins": 0, "by_entity": pd.DataFrame(), "gtin_list": [], "full_df": pd.DataFrame()}
@@ -236,7 +257,12 @@ def _same_row_result(same_row_df):
     }
 
 
-def analyze_inner_equals_outer(df, gtin_outer_col, gtin_inner_col):
+def _noop_progress(_msg, _cur=None, _total=None):
+    pass
+
+
+def analyze_inner_equals_outer(df, gtin_outer_col, gtin_inner_col, progress_cb: Optional[Callable[[str, Optional[int], Optional[int]], None]] = None):
+    report = progress_cb or _noop_progress
     if not gtin_inner_col or gtin_inner_col not in df.columns or "gtin_inner_normalized" not in df.columns:
         return {
             "same_row": {"total": 0, "unique_gtins": 0, "df": pd.DataFrame(), "gtin_list": []},
@@ -245,10 +271,11 @@ def analyze_inner_equals_outer(df, gtin_outer_col, gtin_inner_col):
             "has_inner": False,
         }
     df = df.copy()
-    # Classify only unique GTINs (huge win on 144k+ rows: ~288k -> ~50k-100k unique)
+    report("  Classifying outer GTINs (unique)...", None, None)
     uniq_outer = df["gtin_outer_normalized"].dropna().unique()
     uniq_inner = df["gtin_inner_normalized"].dropna().unique()
     status_outer = {v: classify_gtin_status(v) for v in uniq_outer}
+    report("  Classifying inner GTINs (unique)...", None, None)
     status_inner = {v: classify_gtin_status(v) for v in uniq_inner}
     df["_outer_status"] = df["gtin_outer_normalized"].map(status_outer).fillna("MISSING")
     df["_inner_status"] = df["gtin_inner_normalized"].map(status_inner).fillna("MISSING")
@@ -262,11 +289,12 @@ def analyze_inner_equals_outer(df, gtin_outer_col, gtin_inner_col):
     same_row_df = same_row_df.drop(columns=["_outer_status", "_inner_status"], errors="ignore")
     ok_rows = df[ok_outer].copy()
     ok_rows["_outer_key"] = ok_rows["gtin_outer_normalized"].astype(str).str.strip()
-    # Build entities_by_outer_gtin in one pass (no get_group per key)
+    report("  Building entities by outer GTIN (groupby)...", None, None)
     entities_by_outer_gtin = {}
     for k, g in ok_rows.groupby("_outer_key", dropna=False):
         entities_by_outer_gtin[k] = set(g["Legal Entity"].dropna().unique())
-    with_inner = df[ok_inner & df["gtin_inner_normalized"].notna() & (inner_str != "") & (~inner_eq_outer_row)].copy()
+    report("  Filtering rows where inner != outer (excluding Generic/Blocked on Outer and Inner)...", None, None)
+    with_inner = df[ok_outer & ok_inner & df["gtin_inner_normalized"].notna() & (inner_str != "") & (~inner_eq_outer_row)].copy()
     with_inner = with_inner.drop(columns=["_outer_status", "_inner_status"], errors="ignore")
     with_inner["_inner_key"] = with_inner["gtin_inner_normalized"].astype(str).str.strip()
     if len(with_inner) == 0:
@@ -276,20 +304,20 @@ def analyze_inner_equals_outer(df, gtin_outer_col, gtin_inner_col):
             "other_entity": {"total": 0, "unique_gtins": 0, "df": pd.DataFrame(), "gtin_list": []},
             "has_inner": True,
         }
-    _empty = frozenset()
-    get_ent = entities_by_outer_gtin.get
-    keys_arr = with_inner["_inner_key"].values
-    entities_arr = with_inner["Legal Entity"].values
-    buckets = []
-    for i in range(len(keys_arr)):
-        ent_set = get_ent(keys_arr[i], _empty)
-        if not ent_set:
-            buckets.append("none")
-        elif ent_set == {entities_arr[i]}:
-            buckets.append("same_entity")
+    # Vectorized bucketing: map inner_key -> single entity or __MULTI__, then compare with Legal Entity
+    report("  Bucketing rows (same entity / other entity)...", None, None)
+    single_entity_map = {}
+    for k, ent_set in entities_by_outer_gtin.items():
+        if len(ent_set) == 1:
+            single_entity_map[k] = next(iter(ent_set))
         else:
-            buckets.append("other_entity")
-    with_inner["_bucket"] = buckets
+            single_entity_map[k] = "__MULTI__"
+    mapped = with_inner["_inner_key"].map(single_entity_map)
+    entities = with_inner["Legal Entity"]
+    is_none = mapped.isna()
+    is_same = ~is_none & (mapped != "__MULTI__") & (mapped.values == entities.values)
+    with_inner["_bucket"] = np.where(is_none, "none", np.where(is_same, "same_entity", "other_entity"))
+    report("  Bucketing rows (same entity / other entity)...", len(with_inner), len(with_inner))
     same_entity_df = with_inner[with_inner["_bucket"] == "same_entity"].drop(columns=["_inner_key", "_bucket"], errors="ignore")
     other_entity_df = with_inner[with_inner["_bucket"] == "other_entity"].drop(columns=["_inner_key", "_bucket"], errors="ignore")
     return {
@@ -302,7 +330,7 @@ def analyze_inner_equals_outer(df, gtin_outer_col, gtin_inner_col):
 
 def analyze_valid_gtins_by_entity(df, gtin_outer_col):
     df = df.copy()
-    df["gtin_status"] = df[gtin_outer_col].apply(classify_gtin_status)
+    df["gtin_status"] = _classify_column_unique_then_map(df[gtin_outer_col])
     valid_statuses = ["GTIN_8", "GTIN_13", "GTIN_14"]
     valid_df = df[df["gtin_status"].isin(valid_statuses)].copy()
     if len(valid_df) == 0:
@@ -310,18 +338,20 @@ def analyze_valid_gtins_by_entity(df, gtin_outer_col):
     gtin_entity_counts = valid_df.groupby("gtin_outer_normalized")["Legal Entity"].nunique().reset_index()
     gtin_entity_counts.columns = ["GTIN", "Entity Count"]
     shared_gtins = gtin_entity_counts[gtin_entity_counts["Entity Count"] > 1].sort_values("Entity Count", ascending=False)
-    sharing_details = []
-    for gtin in shared_gtins["GTIN"].head(100):
-        entities = valid_df[valid_df["gtin_outer_normalized"] == gtin]["Legal Entity"].unique().tolist()
-        sharing_details.append({"GTIN": gtin, "Entity Count": len(entities), "Legal Entities": ", ".join(sorted(entities))})
-    sharing_df = pd.DataFrame(sharing_details) if sharing_details else pd.DataFrame()
+    if len(shared_gtins) > 0:
+        gb_shared = valid_df[valid_df["gtin_outer_normalized"].isin(shared_gtins["GTIN"].head(100))].groupby("gtin_outer_normalized")["Legal Entity"].apply(lambda s: ", ".join(sorted(s.dropna().unique().astype(str)))).reset_index()
+        gb_shared.columns = ["GTIN", "Legal Entities"]
+        sharing_df = shared_gtins.head(100).merge(gb_shared, on="GTIN", how="left")
+    else:
+        sharing_df = pd.DataFrame()
     entity_list = sorted(valid_df["Legal Entity"].unique())
+    entity_gtins = {k: set(v.dropna().unique()) for k, v in valid_df.groupby("Legal Entity")["gtin_outer_normalized"]}
     entity_sharing = []
     for i, entity1 in enumerate(entity_list):
+        set1 = entity_gtins.get(entity1, set())
         for entity2 in entity_list[i + 1 :]:
-            gtins1 = set(valid_df[valid_df["Legal Entity"] == entity1]["gtin_outer_normalized"].unique())
-            gtins2 = set(valid_df[valid_df["Legal Entity"] == entity2]["gtin_outer_normalized"].unique())
-            shared_count = len(gtins1.intersection(gtins2))
+            set2 = entity_gtins.get(entity2, set())
+            shared_count = len(set1 & set2)
             if shared_count > 0:
                 entity_sharing.append({"Entity 1": entity1, "Entity 2": entity2, "Shared GTINs": shared_count})
     entity_sharing_df = pd.DataFrame(entity_sharing).sort_values("Shared GTINs", ascending=False) if entity_sharing else pd.DataFrame()
@@ -350,6 +380,13 @@ _QUALITY_STATUS_MAP = {
 def _classify_gtin_quality(gtin_raw):
     """Classify for Quality Dashboard: INVALID, GENERIC, PLACEHOLDER, 8_digits, 13_digits, 14_digits."""
     return _QUALITY_STATUS_MAP.get(classify_gtin_status(gtin_raw), "INVALID")
+
+
+def _classify_gtin_quality_unique_then_map(series):
+    """Classify only unique values then map. Much faster than apply on full column."""
+    uniq = series.dropna().unique()
+    status_map = {v: _classify_gtin_quality(v) for v in uniq}
+    return series.map(status_map).fillna("INVALID")
 
 
 # Generic GTIN Analysis: taxonomy mapping (same as page 5)
@@ -381,7 +418,7 @@ def _gtin_to_14(gtin):
 def run_quality_analysis(df, gtin_outer_col, output_dir: str):
     """Run Quality Dashboard logic (all legal entities). Write quality_*.xlsx and quality_overview.json."""
     df = df.copy()
-    df["gtin_status"] = df["gtin_outer_normalized"].apply(_classify_gtin_quality)
+    df["gtin_status"] = _classify_gtin_quality_unique_then_map(df["gtin_outer_normalized"])
     valid_statuses = ["8_digits", "13_digits", "14_digits"]
     total_valid = df[df["gtin_status"].isin(valid_statuses)].shape[0]
     total_invalid = df[df["gtin_status"] == "INVALID"].shape[0]
@@ -393,8 +430,9 @@ def run_quality_analysis(df, gtin_outer_col, output_dir: str):
     entity_counts = df.groupby("Legal Entity").size().to_dict()
 
     analysis_data = []
-    for entity in legal_entities:
-        entity_df = df[df["Legal Entity"] == entity]
+    for entity, entity_df in df.groupby("Legal Entity", dropna=False):
+        if pd.isna(entity):
+            continue
         total = len(entity_df)
         status_counts = entity_df["gtin_status"].value_counts().to_dict()
         valid_count = sum(status_counts.get(s, 0) for s in valid_statuses)
@@ -417,6 +455,7 @@ def run_quality_analysis(df, gtin_outer_col, output_dir: str):
     quality_by_entity = pd.DataFrame(analysis_data)
     quality_by_entity.to_excel(os.path.join(output_dir, "quality_by_entity.xlsx"), index=False)
     df.to_excel(os.path.join(output_dir, "quality_full_classified.xlsx"), index=False)
+    df.to_csv(os.path.join(output_dir, "quality_full_classified.csv"), index=False, encoding="utf-8")
 
     brand_col = next((c for c in df.columns if str(c).strip().lower() == "brand"), None)
     if brand_col:
@@ -444,7 +483,7 @@ def run_quality_analysis(df, gtin_outer_col, output_dir: str):
 def run_generic_analysis(df, gtin_outer_col, output_dir: str):
     """Run Generic GTIN conformity analysis (all legal entities). Write generic_*.xlsx and generic_overview.json."""
     df = df.copy()
-    df["gtin_status_gen"] = df["gtin_outer_normalized"].apply(_classify_gtin_quality)
+    df["gtin_status_gen"] = _classify_gtin_quality_unique_then_map(df["gtin_outer_normalized"])
     generic_df = df[df["gtin_status_gen"] == "GENERIC"].copy()
     if len(generic_df) == 0:
         with open(os.path.join(output_dir, "generic_overview.json"), "w", encoding="utf-8") as f:
@@ -455,10 +494,13 @@ def run_generic_analysis(df, gtin_outer_col, output_dir: str):
         generic_df["osd_prefix"] = generic_df[osd_col].fillna("").astype(str).str.strip().str.split("-").str[0].str.strip()
     else:
         generic_df["osd_prefix"] = ""
-    generic_df["gtin_14"] = generic_df["gtin_outer_normalized"].apply(_gtin_to_14)
-    generic_df["expected_gtin"] = generic_df["osd_prefix"].apply(
-        lambda x: EXPECTED_GTIN_BY_TAXONOMY.get(str(x).strip().upper()) if pd.notna(x) and str(x).strip() else None
-    )
+    # Classify on unique then map (faster than apply on full column)
+    uniq_gtin = generic_df["gtin_outer_normalized"].dropna().unique()
+    gtin_14_map = {v: _gtin_to_14(v) for v in uniq_gtin}
+    generic_df["gtin_14"] = generic_df["gtin_outer_normalized"].map(gtin_14_map).fillna("")
+    uniq_osd = generic_df["osd_prefix"].dropna().unique()
+    expected_map = {v: EXPECTED_GTIN_BY_TAXONOMY.get(str(v).strip().upper()) if pd.notna(v) and str(v).strip() else None for v in uniq_osd}
+    generic_df["expected_gtin"] = generic_df["osd_prefix"].map(expected_map)
     generic_df["conforming"] = generic_df["expected_gtin"].notna() & (generic_df["gtin_14"] == generic_df["expected_gtin"])
     conforming_count = generic_df["conforming"].sum()
     non_conforming_count = len(generic_df) - conforming_count
@@ -488,12 +530,15 @@ def run_generic_analysis(df, gtin_outer_col, output_dir: str):
 def run_generate_email_reports(df, gtin_outer_col, output_dir: str):
     """Generate one Excel report per legal entity (Summary + Generic + Placeholder sheets). All entities only."""
     df = df.copy()
-    df["gtin_status"] = df["gtin_outer_normalized"].apply(_classify_gtin_quality)
+    df["gtin_status"] = _classify_gtin_quality_unique_then_map(df["gtin_outer_normalized"])
     email_dir = os.path.join(output_dir, "email_reports")
     Path(email_dir).mkdir(parents=True, exist_ok=True)
-    legal_entities = sorted(df["Legal Entity"].dropna().unique().tolist())
-    for entity in legal_entities:
-        entity_data = df[df["Legal Entity"] == entity].copy()
+    legal_entities = []
+    for entity, entity_data in df.groupby("Legal Entity", dropna=False):
+        if pd.isna(entity):
+            continue
+        legal_entities.append(entity)
+        entity_data = entity_data.copy()
         generic_blocked = entity_data[entity_data["gtin_status"].isin(["GENERIC", "PLACEHOLDER", "BLOCKED"])].copy()
         generic_gtins = generic_blocked[generic_blocked["gtin_status"] == "GENERIC"].copy()
         blocked_gtins = generic_blocked[generic_blocked["gtin_status"].isin(["PLACEHOLDER", "BLOCKED"])].copy()
@@ -514,7 +559,7 @@ def run_generate_email_reports(df, gtin_outer_col, output_dir: str):
                 generic_gtins.to_excel(writer, sheet_name="Generic GTINs", index=False)
             if len(blocked_gtins) > 0:
                 blocked_gtins.to_excel(writer, sheet_name="Placeholder GTINs (999...99)", index=False)
-    email_overview = {"legal_entities": legal_entities, "report_count": len(legal_entities)}
+    email_overview = {"legal_entities": sorted(legal_entities), "report_count": len(legal_entities)}
     with open(os.path.join(output_dir, "email_overview.json"), "w", encoding="utf-8") as f:
         json.dump(email_overview, f, indent=2)
 
@@ -525,11 +570,18 @@ def run_full_analysis(input_excel_path: str, output_dir: str = None, extract_dat
     output_dir defaults to outputs/YYYY-MM-DD (extract_date or today).
     Returns the path to the created output directory.
     """
+    total_steps = 11
+    def step(n, msg):
+        print(f"[{n}/{total_steps}] {msg}")
+
+    t0 = time.perf_counter()
+    step(1, "Loading data...")
     result = load_duplicate_data_from_path(input_excel_path)
     if result[0] is None:
         raise ValueError(f"Failed to load data from {input_excel_path} (check file and GTIN-Outer column).")
     df, gtin_outer_col, gtin_inner_col, generic_gtin_col = result
     total_rows = len(df)
+    print(f"      Load: {time.perf_counter() - t0:.1f}s ({total_rows} rows)")
 
     if extract_date:
         out_date = extract_date
@@ -539,19 +591,46 @@ def run_full_analysis(input_excel_path: str, output_dir: str = None, extract_dat
         output_dir = os.path.join(OUTPUTS_BASE, out_date)
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-    print("Running duplicate analysis...")
-    duplicate_results = analyze_duplicates(df, gtin_outer_col, gtin_inner_col)
-    print("Running generic GTINs analysis...")
-    generic_results = analyze_generic_gtins(df, gtin_outer_col, generic_gtin_col)
-    print("Running placeholder GTINs analysis...")
-    placeholder_results = analyze_placeholder_gtins(df, gtin_outer_col)
-    print("Running suspect GTINs analysis...")
-    suspect_results = analyze_suspect_gtins(df, gtin_outer_col)
-    print("Running valid GTINs by entity...")
-    valid_results = analyze_valid_gtins_by_entity(df, gtin_outer_col)
-    print("Running Inner = Outer analysis...")
-    inner_eq_outer_results = analyze_inner_equals_outer(df, gtin_outer_col, gtin_inner_col)
+    def inner_outer_progress(msg, cur=None, total=None):
+        if cur is not None and total is not None and total > 0:
+            pct = int(100 * cur / total)
+            print(f"      {msg} {pct}%")
+        else:
+            print(f"      {msg}")
 
+    t = time.perf_counter()
+    step(2, "Duplicate analysis...")
+    duplicate_results = analyze_duplicates(df, gtin_outer_col, gtin_inner_col)
+    print(f"      {time.perf_counter() - t:.1f}s")
+
+    t = time.perf_counter()
+    step(3, "Generic GTINs analysis...")
+    generic_results = analyze_generic_gtins(df, gtin_outer_col, generic_gtin_col)
+    print(f"      {time.perf_counter() - t:.1f}s")
+
+    t = time.perf_counter()
+    step(4, "Placeholder GTINs analysis...")
+    placeholder_results = analyze_placeholder_gtins(df, gtin_outer_col)
+    print(f"      {time.perf_counter() - t:.1f}s")
+
+    t = time.perf_counter()
+    step(5, "Suspect GTINs analysis...")
+    suspect_results = analyze_suspect_gtins(df, gtin_outer_col)
+    print(f"      {time.perf_counter() - t:.1f}s")
+
+    t = time.perf_counter()
+    step(6, "Valid GTINs by entity...")
+    valid_results = analyze_valid_gtins_by_entity(df, gtin_outer_col)
+    print(f"      {time.perf_counter() - t:.1f}s")
+
+    t = time.perf_counter()
+    step(7, "Inner = Outer analysis...")
+    inner_eq_outer_results = analyze_inner_equals_outer(df, gtin_outer_col, gtin_inner_col, progress_cb=inner_outer_progress)
+    print(f"      {time.perf_counter() - t:.1f}s")
+
+    t = time.perf_counter()
+    step(8, "Writing overview + Excel outputs (duplicates, generic, valid, inner=outer)...")
+    print("      overview.json + manifest.json...")
     legal_entities = sorted(df["Legal Entity"].dropna().unique().tolist())
     entity_counts = df.groupby("Legal Entity").size().to_dict()
     # Overview for Streamlit
@@ -593,44 +672,65 @@ def run_full_analysis(input_excel_path: str, output_dir: str = None, extract_dat
     with open(os.path.join(output_dir, OUTPUT_MANIFEST), "w", encoding="utf-8") as f:
         json.dump(manifest, f, indent=2)
 
-    # Excel outputs
-    def write_excel(name, data_bytes):
-        path = os.path.join(output_dir, name)
+    # Excel outputs: build bytes in parallel then write (I/O + openpyxl overlap)
+    def _excel_task(name, path, producer):
+        print(f"        [start] {name}")
+        data = producer()
         with open(path, "wb") as f:
-            f.write(data_bytes)
+            f.write(data)
+        print(f"        [done]  {name}")
 
-    if duplicate_results["cross"] and len(duplicate_results["cross"]["cross_df"]) > 0:
-        write_excel("cross_duplicates.xlsx", to_excel_bytes(duplicate_results["cross"]["cross_df"]))
-    duplicate_results["outer"]["duplicate_df"].to_excel(os.path.join(output_dir, "outer_duplicates.xlsx"), index=False)
-    if duplicate_results.get("inner"):
-        duplicate_results["inner"]["duplicate_df"].to_excel(os.path.join(output_dir, "inner_duplicates.xlsx"), index=False)
-    generic_results["by_entity"].to_excel(os.path.join(output_dir, "generic_by_entity.xlsx"), index=False)
-    ds = generic_results.get("duplicate_summary", pd.DataFrame())
-    if ds is not None and len(ds) > 0:
-        generic_results["duplicate_summary"].to_excel(os.path.join(output_dir, "generic_duplicate_summary.xlsx"), index=False)
-    placeholder_results["by_entity"].to_excel(os.path.join(output_dir, "placeholder_by_entity.xlsx"), index=False)
-    suspect_results["by_entity"].to_excel(os.path.join(output_dir, "suspect_by_entity.xlsx"), index=False)
-    valid_results["shared_gtins"].to_excel(os.path.join(output_dir, "valid_shared_gtins.xlsx"), index=False)
-    valid_results["entity_sharing"].to_excel(os.path.join(output_dir, "valid_entity_sharing.xlsx"), index=False)
-    if len(valid_results["sharing_details"]) > 0:
-        valid_results["sharing_details"].to_excel(os.path.join(output_dir, "valid_sharing_details.xlsx"), index=False)
-
-    inner_eq_outer_results["same_row"]["df"].to_excel(os.path.join(output_dir, "outer_eq_inner_same_row.xlsx"), index=False)
     same_entity_df = inner_eq_outer_results["same_entity"]["df"]
     other_entity_df = inner_eq_outer_results["other_entity"]["df"]
+    ds = generic_results.get("duplicate_summary", pd.DataFrame())
+
+    excel_tasks = [
+        ("outer_duplicates.xlsx", os.path.join(output_dir, "outer_duplicates.xlsx"), lambda: to_excel_bytes(duplicate_results["outer"]["duplicate_df"])),
+        ("generic_by_entity.xlsx", os.path.join(output_dir, "generic_by_entity.xlsx"), lambda: to_excel_bytes(generic_results["by_entity"])),
+        ("placeholder_by_entity.xlsx", os.path.join(output_dir, "placeholder_by_entity.xlsx"), lambda: to_excel_bytes(placeholder_results["by_entity"])),
+        ("suspect_by_entity.xlsx", os.path.join(output_dir, "suspect_by_entity.xlsx"), lambda: to_excel_bytes(suspect_results["by_entity"])),
+        ("valid_shared_gtins.xlsx", os.path.join(output_dir, "valid_shared_gtins.xlsx"), lambda: to_excel_bytes(valid_results["shared_gtins"])),
+        ("valid_entity_sharing.xlsx", os.path.join(output_dir, "valid_entity_sharing.xlsx"), lambda: to_excel_bytes(valid_results["entity_sharing"])),
+        ("outer_eq_inner_same_row.xlsx", os.path.join(output_dir, "outer_eq_inner_same_row.xlsx"), lambda: to_excel_bytes(inner_eq_outer_results["same_row"]["df"])),
+    ]
+    if duplicate_results["cross"] and len(duplicate_results["cross"]["cross_df"]) > 0:
+        excel_tasks.append(("cross_duplicates.xlsx", os.path.join(output_dir, "cross_duplicates.xlsx"), lambda: to_excel_bytes(duplicate_results["cross"]["cross_df"])))
+    if duplicate_results.get("inner"):
+        excel_tasks.append(("inner_duplicates.xlsx", os.path.join(output_dir, "inner_duplicates.xlsx"), lambda: to_excel_bytes(duplicate_results["inner"]["duplicate_df"])))
+    if ds is not None and len(ds) > 0:
+        excel_tasks.append(("generic_duplicate_summary.xlsx", os.path.join(output_dir, "generic_duplicate_summary.xlsx"), lambda: to_excel_bytes(generic_results["duplicate_summary"])))
+    if len(valid_results["sharing_details"]) > 0:
+        excel_tasks.append(("valid_sharing_details.xlsx", os.path.join(output_dir, "valid_sharing_details.xlsx"), lambda: to_excel_bytes(valid_results["sharing_details"])))
     if len(same_entity_df) > 0:
-        write_excel("inner_eq_outer_same_entity.xlsx", to_excel_bytes_inner_outer_paired(same_entity_df, df, same_entity=True))
+        excel_tasks.append(("inner_eq_outer_same_entity.xlsx", os.path.join(output_dir, "inner_eq_outer_same_entity.xlsx"), lambda: to_excel_bytes_inner_outer_paired(same_entity_df, df, same_entity=True)))
     if len(other_entity_df) > 0:
-        write_excel("inner_eq_outer_other_entity.xlsx", to_excel_bytes_inner_outer_paired(other_entity_df, df, same_entity=False))
+        excel_tasks.append(("inner_eq_outer_other_entity.xlsx", os.path.join(output_dir, "inner_eq_outer_other_entity.xlsx"), lambda: to_excel_bytes_inner_outer_paired(other_entity_df, df, same_entity=False)))
 
-    print("Running Quality Dashboard analysis...")
+    print(f"      Excel: {len(excel_tasks)} files, max_workers={min(8, len(excel_tasks))}...")
+    max_workers = min(8, len(excel_tasks))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(_excel_task, name, path, prod) for name, path, prod in excel_tasks]
+        for fut in as_completed(futures):
+            fut.result()
+
+    print(f"      {time.perf_counter() - t:.1f}s")
+
+    t = time.perf_counter()
+    step(9, "Quality Dashboard analysis...")
     run_quality_analysis(df, gtin_outer_col, output_dir)
-    print("Running Generic GTIN analysis...")
-    run_generic_analysis(df, gtin_outer_col, output_dir)
-    print("Running Generate Email reports (one per Legal Entity)...")
-    run_generate_email_reports(df, gtin_outer_col, output_dir)
+    print(f"      {time.perf_counter() - t:.1f}s")
 
-    print(f"Done. Outputs written to {output_dir}")
+    t = time.perf_counter()
+    step(10, "Generic GTIN conformity analysis...")
+    run_generic_analysis(df, gtin_outer_col, output_dir)
+    print(f"      {time.perf_counter() - t:.1f}s")
+
+    t = time.perf_counter()
+    step(11, "Generate Email reports (one per Legal Entity)...")
+    run_generate_email_reports(df, gtin_outer_col, output_dir)
+    print(f"      {time.perf_counter() - t:.1f}s")
+
+    print(f"Done. Total {time.perf_counter() - t0:.1f}s. Outputs written to {output_dir}")
     return output_dir
 
 
@@ -790,7 +890,11 @@ def load_quality_results(output_dir: str):
         return pd.read_excel(p, dtype=str)
 
     by_entity_df = _read("quality_by_entity.xlsx")
-    full_classified_df = _read("quality_full_classified.xlsx")
+    full_classified_path_csv = os.path.join(output_dir, "quality_full_classified.csv")
+    if os.path.isfile(full_classified_path_csv):
+        full_classified_df = pd.read_csv(full_classified_path_csv, dtype=str, encoding="utf-8")
+    else:
+        full_classified_df = _read("quality_full_classified.xlsx")
     generics_non_eupcker_df = _read("generics_non_eupcker.xlsx")
     manifest = load_manifest(output_dir)
     gtin_outer_col = manifest.get("gtin_outer_col", "GTIN-Outer")

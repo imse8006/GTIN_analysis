@@ -213,6 +213,12 @@ from export_utils import to_excel_bytes
 from auth_utils import render_login_form
 from duplicate_analysis_backend import list_output_dates, load_quality_results, OUTPUTS_BASE
 
+
+@st.cache_data(ttl=3600)
+def _cached_load_quality_results(output_dir: str):
+    """Cache Quality results (avoids re-reading 144k-row Excel on every rerun)."""
+    return load_quality_results(output_dir)
+
 # MDM Business Rules
 GENERIC_GTINS = {
     "10000000000009", "20000000000009", "30000000000009", "40000000000009",
@@ -345,7 +351,7 @@ def main():
     with load_ph.container():
         st.markdown("<div style='text-align: center; padding: 4rem 2rem; color: #94a3b8;'>", unsafe_allow_html=True)
         with st.spinner("Chargement des données…"):
-            data = load_quality_results(output_dir)
+            data = _cached_load_quality_results(output_dir)
         st.markdown("</div>", unsafe_allow_html=True)
     if data is None:
         st.error("Impossible de charger les résultats Quality pour cette date.")

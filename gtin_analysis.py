@@ -111,8 +111,8 @@ def classify_gtin_status(gtin_raw: Optional[str]) -> str:
     if gtin is None:
         return "MISSING"
     
-    # Step 2: Check EXPLICIT_BLOCKED (highest business priority)
-    if gtin == EXPLICIT_BLOCKED:
+    # Step 2: Check EXPLICIT_BLOCKED / placeholder (all-9s: 9, 99, 999...999, 99999999999999)
+    if gtin and set(gtin) == {"9"}:
         return "EXPLICIT_BLOCKED"
     
     # Step 3: Check GENERIC_GTIN (second business priority)

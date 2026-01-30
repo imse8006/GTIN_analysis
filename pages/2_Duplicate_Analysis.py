@@ -19,6 +19,13 @@ from duplicate_analysis_backend import (
     OUTPUTS_BASE,
 )
 
+
+@st.cache_data(ttl=3600)
+def _cached_load_output_results(output_dir: str, selected_entities_key=None):
+    """Cache Duplicate Analysis results (avoids re-reading many large Excel on every rerun). selected_entities_key: tuple of entities or None for all."""
+    entities = list(selected_entities_key) if selected_entities_key else None
+    return load_output_results(output_dir, selected_entities=entities)
+
 # Import GTIN classification functions
 try:
     from gtin_analysis import (
@@ -712,7 +719,7 @@ def main():
     output_dir = date_paths[selected_date_label]
 
     with st.spinner("Chargement des résultats…"):
-        loaded = load_output_results(output_dir, selected_entities=None)
+        loaded = _cached_load_output_results(output_dir, None)
     if loaded is None:
         st.error("Impossible de charger les résultats pour cette date.")
         return
@@ -769,7 +776,7 @@ def main():
 
     # Re-load with entity filter so metrics/tables reflect selection
     with st.spinner("Application du filtre Legal Entity…"):
-        loaded = load_output_results(output_dir, selected_entities=selected_entities)
+        loaded = _cached_load_output_results(output_dir, tuple(selected_entities) if selected_entities else None)
     if loaded is None:
         return
     overview, _, duplicate_results, generic_results, placeholder_results, suspect_results, valid_results, inner_eq_outer_results, total_rows, gtin_outer_col, gtin_inner_col = loaded
@@ -1031,15 +1038,20 @@ def main():
                     
                     # Chart: Duplicates by Entity Count
                     st.markdown("##### 📊 Distribution: How Many Entities Share Each Generic GTIN")
-                    entity_count_dist = generic_results["duplicate_summary"]["Entity Count"].value_counts().sort_index()
-                    fig_entity_dist = px.bar(
-                        x=entity_count_dist.index,
-                        y=entity_count_dist.values,
-                        title="Number of Generic GTINs by Entity Count",
-                        labels={"x": "Number of Legal Entities", "y": "Number of Generic GTINs"}
-                    )
-                    fig_entity_dist.update_layout(template='plotly_dark', height=400)
-                    st.plotly_chart(fig_entity_dist, use_container_width=True)
+                    dup_sum = generic_results["duplicate_summary"]
+                    entity_count_col = next((c for c in dup_sum.columns if "entity" in c.lower() and "count" in c.lower()), None)
+                    if entity_count_col is not None:
+                        entity_count_dist = dup_sum[entity_count_col].value_counts().sort_index()
+                        fig_entity_dist = px.bar(
+                            x=entity_count_dist.index,
+                            y=entity_count_dist.values,
+                            title="Number of Generic GTINs by Entity Count",
+                            labels={"x": "Number of Legal Entities", "y": "Number of Generic GTINs"}
+                        )
+                        fig_entity_dist.update_layout(template='plotly_dark', height=400)
+                        st.plotly_chart(fig_entity_dist, use_container_width=True)
+                    else:
+                        st.caption("(Entity count column not found in duplicate summary)")
                 else:
                     st.info("No duplicate summary available")
             else:

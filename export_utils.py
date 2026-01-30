@@ -53,8 +53,12 @@ def _build_inner_outer_paired_df(inner_df, full_df, same_entity):
     return out[[c for c in col_order if c in out.columns]]
 
 
+0# Below this row count: apply green fill. Above: skip (openpyxl cell-by-cell is O(rows*cols), can take hours).
+_INNER_OUTER_STYLE_ROW_LIMIT = 8000
+
+
 def to_excel_bytes_inner_outer_paired(inner_df, full_df, same_entity=True) -> bytes:
-    """Export Inner rows with matching Outer rows, paired by Match_Group, with alternating green fill."""
+    """Export Inner rows with matching Outer rows, paired by Match_Group, with alternating green fill (skipped for large sheets)."""
     df = _build_inner_outer_paired_df(inner_df, full_df, same_entity)
     if df is None or df.empty:
         buf = io.BytesIO()
@@ -64,10 +68,11 @@ def to_excel_bytes_inner_outer_paired(inner_df, full_df, same_entity=True) -> by
     buf = io.BytesIO()
     df.to_excel(buf, index=False, engine="openpyxl")
     buf.seek(0)
+    if len(df) > _INNER_OUTER_STYLE_ROW_LIMIT:
+        return buf.getvalue()
     wb = load_workbook(buf)
     ws = wb.active
     green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
-    # Use DataFrame to know which Excel rows have odd Match_Group (faster than reading cells)
     mg = pd.to_numeric(df["Match_Group"], errors="coerce").fillna(0).astype(int)
     odd_rows = {i + 2 for i in range(len(df)) if mg.iloc[i] % 2 == 1}
     for row_idx in odd_rows:
