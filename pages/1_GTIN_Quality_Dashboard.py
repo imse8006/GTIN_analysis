@@ -358,6 +358,20 @@ def main():
     if not check_password():
         st.stop()
     
+    # Single loading placeholder: no header/button until data is ready (avoids ugly "effect behind")
+    load_ph = st.empty()
+    with load_ph.container():
+        st.markdown("<div style='text-align: center; padding: 4rem 2rem; color: #94a3b8;'>", unsafe_allow_html=True)
+        with st.spinner("Chargement des données…"):
+            result = load_and_classify_data()
+        st.markdown("</div>", unsafe_allow_html=True)
+    if result is None:
+        return
+    df, gtin_col = result
+    load_ph.empty()
+    
+    total_rows = len(df)
+    
     # Header
     st.markdown('<h1 class="main-header">GTIN Quality Dashboard</h1>', unsafe_allow_html=True)
     
@@ -369,15 +383,6 @@ def main():
     with col_btn2:
         if st.button("💾 Save Analysis and Report to Tracker", use_container_width=True, type="primary", key="save_quality_analysis_top"):
             st.session_state["save_quality_requested"] = True
-    
-    # Load data
-    with st.spinner("Loading and analyzing data..."):
-        result = load_and_classify_data()
-        if result is None:
-            return
-        df, gtin_col = result
-    
-    total_rows = len(df)
     
     # Horizontal filters section
     st.markdown('<div class="filter-section">', unsafe_allow_html=True)

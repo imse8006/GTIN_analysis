@@ -310,20 +310,25 @@ def main():
     if not check_password():
         st.stop()
     
+    # Single loading placeholder: no header until data is ready (avoids ugly "effect behind")
+    load_ph = st.empty()
+    with load_ph.container():
+        st.markdown("<div style='text-align: center; padding: 4rem 2rem; color: #94a3b8;'>", unsafe_allow_html=True)
+        with st.spinner("Chargement des données…"):
+            result = load_and_classify_data()
+        st.markdown("</div>", unsafe_allow_html=True)
+    if result is None:
+        return
+    df, gtin_col = result
+    load_ph.empty()
+    
+    total_rows = len(df)
+    
     # Header
     st.markdown('<h1 class="main-header">📊 GTIN Quality Dashboard</h1>', unsafe_allow_html=True)
     
     # Display source file info
     st.markdown(f'<div style="text-align: center; color: #cbd5e1; margin-bottom: 1.5rem;">📁 Source file: <strong style="color: #60a5fa;">{INPUT_FILE}</strong></div>', unsafe_allow_html=True)
-    
-    # Load data
-    with st.spinner("Loading and analyzing data..."):
-        result = load_and_classify_data()
-        if result is None:
-            return
-        df, gtin_col = result
-    
-    total_rows = len(df)
     
     # Horizontal filters section
     st.markdown('<div class="filter-section">', unsafe_allow_html=True)
