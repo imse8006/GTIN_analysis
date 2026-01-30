@@ -10,7 +10,7 @@ from pathlib import Path
 import sys
 
 st.set_page_config(
-    page_title="Generic GTIN Analysis - MDM",
+    page_title="Generic GTIN Analysis",
     page_icon="📦",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -18,7 +18,7 @@ st.set_page_config(
 
 sys.path.append(str(Path(__file__).parent.parent))
 from export_utils import to_excel_bytes
-from auth_utils import render_login_header, render_login_footer
+from auth_utils import render_login_form
 INPUT_FILE = "all-products-prod-2026-01-22_15.44.25.xlsx"
 
 # Generic GTIN set (same as other pages)
@@ -153,30 +153,7 @@ def load_and_classify_data():
 
 
 def check_password():
-    def password_entered():
-        try:
-            correct_password = st.secrets["PASSWORD"]
-        except (KeyError, FileNotFoundError):
-            correct_password = "OSDTeam123"
-        entered = st.session_state.get("password_gen_gtin", "")
-        if entered == correct_password:
-            st.session_state["password_correct"] = True
-            if "password_gen_gtin" in st.session_state:
-                del st.session_state["password_gen_gtin"]
-        else:
-            st.session_state["password_correct"] = False
-
-    if st.session_state.get("password_correct", False):
-        return True
-    render_login_header("Generic GTIN Analysis")
-    st.text_input("Password", type="password", on_change=password_entered, key="password_gen_gtin", label_visibility="visible")
-    if "password_gen_gtin" in st.session_state and st.session_state.get("password_correct") is False:
-        st.error("Incorrect password")
-    if st.session_state.get("password_correct", False):
-        render_login_footer()
-        st.rerun()
-    render_login_footer()
-    return False
+    return render_login_form("Generic GTIN Analysis", password_key="password_gen_gtin")
 
 
 st.markdown("""

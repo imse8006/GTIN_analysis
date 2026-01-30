@@ -17,7 +17,7 @@ OUTLOOK_AVAILABLE = False
 OUTLOOK_ERROR_MSG = None
 import sys
 import platform
-from auth_utils import render_login_header, render_login_footer
+from auth_utils import render_login_form
 
 # Check if running on Windows
 IS_WINDOWS = platform.system() == "Windows"
@@ -43,7 +43,7 @@ else:
 # Note: This file is kept for backward compatibility
 # For multi-page navigation, use Home.py as entry point or pages/1_GTIN_Quality_Dashboard.py directly
 st.set_page_config(
-    page_title="GTIN Quality Dashboard - MDM Analysis",
+    page_title="GTIN Quality Dashboard",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"  # Expanded to show navigation if pages are detected
@@ -302,34 +302,7 @@ def load_and_classify_data():
 
 def check_password():
     """Returns `True` if the user had the correct password."""
-    
-    def password_entered():
-        """Checks whether a password entered by the user is correct."""
-        # Get password from secrets (Streamlit Cloud) or use default for local
-        try:
-            correct_password = st.secrets["PASSWORD"]
-        except (KeyError, FileNotFoundError):
-            correct_password = "OSDTeam123"
-        
-        entered = st.session_state.get("password", "")
-        if entered == correct_password:
-            st.session_state["password_correct"] = True
-            if "password" in st.session_state:
-                del st.session_state["password"]
-        else:
-            st.session_state["password_correct"] = False
-    
-    if st.session_state.get("password_correct", False):
-        return True
-    render_login_header("GTIN Quality Dashboard")
-    st.text_input("Password", type="password", on_change=password_entered, key="password", label_visibility="visible")
-    if "password" in st.session_state and st.session_state.get("password_correct", None) == False:
-        st.error("Incorrect password")
-    if st.session_state.get("password_correct", False):
-        render_login_footer()
-        st.rerun()
-    render_login_footer()
-    return False
+    return render_login_form("GTIN Quality Dashboard")
 
 
 def main():
@@ -338,7 +311,7 @@ def main():
         st.stop()
     
     # Header
-    st.markdown('<h1 class="main-header">📊 GTIN Quality Dashboard - MDM Analysis</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">📊 GTIN Quality Dashboard</h1>', unsafe_allow_html=True)
     
     # Display source file info
     st.markdown(f'<div style="text-align: center; color: #cbd5e1; margin-bottom: 1.5rem;">📁 Source file: <strong style="color: #60a5fa;">{INPUT_FILE}</strong></div>', unsafe_allow_html=True)

@@ -8,7 +8,7 @@ import streamlit as st
 
 # Minimal page config - Streamlit will auto-detect pages/ directory
 st.set_page_config(
-    page_title="GTIN Analysis - MDM",
+    page_title="GTIN Analysis",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="expanded"

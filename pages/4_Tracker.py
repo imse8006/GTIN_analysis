@@ -7,7 +7,7 @@ import sys
 
 # Import tracker utilities
 sys.path.append(str(Path(__file__).parent.parent))
-from auth_utils import render_login_header, render_login_footer
+from auth_utils import render_login_form
 from tracker_utils import (
     load_tracker_data,
     get_quality_tracker_data,
@@ -16,7 +16,7 @@ from tracker_utils import (
 
 # Page configuration
 st.set_page_config(
-    page_title="GTIN Tracker - MDM",
+    page_title="GTIN Tracker",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -56,31 +56,7 @@ st.markdown("""
 
 def check_password():
     """Returns `True` if the user had the correct password."""
-    def password_entered():
-        try:
-            correct_password = st.secrets["PASSWORD"]
-        except (KeyError, FileNotFoundError):
-            correct_password = "OSDTeam123"
-        
-        entered = st.session_state.get("password", "")
-        if entered == correct_password:
-            st.session_state["password_correct"] = True
-            if "password" in st.session_state:
-                del st.session_state["password"]
-        else:
-            st.session_state["password_correct"] = False
-    
-    if st.session_state.get("password_correct", False):
-        return True
-    render_login_header("GTIN Tracker")
-    st.text_input("Password", type="password", on_change=password_entered, key="password", label_visibility="visible")
-    if "password" in st.session_state and st.session_state.get("password_correct", None) == False:
-        st.error("Incorrect password")
-    if st.session_state.get("password_correct", False):
-        render_login_footer()
-        st.rerun()
-    render_login_footer()
-    return False
+    return render_login_form("GTIN Tracker")
 
 
 def main():

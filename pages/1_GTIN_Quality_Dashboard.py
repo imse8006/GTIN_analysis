@@ -209,7 +209,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent))
 sys.path.append(str(Path(__file__).parent.parent))
 from export_utils import to_excel_bytes
-from auth_utils import render_login_header, render_login_footer
+from auth_utils import render_login_form
 
 # Import necessary functions
 INPUT_FILE = "all-products-prod-2026-01-22_15.44.25.xlsx"
@@ -350,35 +350,7 @@ def load_and_classify_data():
 
 def check_password():
     """Returns `True` if the user had the correct password."""
-    
-    def password_entered():
-        """Checks whether a password entered by the user is correct."""
-        # Get password from secrets (Streamlit Cloud) or use default for local
-        try:
-            correct_password = st.secrets["PASSWORD"]
-        except (KeyError, FileNotFoundError):
-            correct_password = "OSDTeam123"
-        
-        entered = st.session_state.get("password", "")
-        if entered == correct_password:
-            st.session_state["password_correct"] = True
-            if "password" in st.session_state:
-                del st.session_state["password"]
-        else:
-            st.session_state["password_correct"] = False
-    
-    if st.session_state.get("password_correct", False):
-        return True
-    
-    render_login_header("GTIN Quality Dashboard")
-    st.text_input("Password", type="password", on_change=password_entered, key="password", label_visibility="visible")
-    if "password" in st.session_state and st.session_state.get("password_correct", None) == False:
-        st.error("Incorrect password")
-    if st.session_state.get("password_correct", False):
-        render_login_footer()
-        st.rerun()
-    render_login_footer()
-    return False
+    return render_login_form("GTIN Quality Dashboard")
 
 
 def main():

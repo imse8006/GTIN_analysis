@@ -14,7 +14,7 @@ from auth_utils import render_login_header, render_login_footer
 
 # Page configuration
 st.set_page_config(
-    page_title="Generate Email - MDM",
+    page_title="Generate Email",
     page_icon="📧",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -129,30 +129,7 @@ def load_and_classify_data():
 
 
 def check_password():
-    def password_entered():
-        try:
-            correct_password = st.secrets["PASSWORD"]
-        except (KeyError, FileNotFoundError):
-            correct_password = "OSDTeam123"
-        entered = st.session_state.get("password", "")
-        if entered == correct_password:
-            st.session_state["password_correct"] = True
-            if "password" in st.session_state:
-                del st.session_state["password"]
-        else:
-            st.session_state["password_correct"] = False
-
-    if st.session_state.get("password_correct", False):
-        return True
-    render_login_header("Generate Email")
-    st.text_input("Password", type="password", on_change=password_entered, key="password", label_visibility="visible")
-    if "password" in st.session_state and st.session_state.get("password_correct") is False:
-        st.error("Incorrect password")
-    if st.session_state.get("password_correct", False):
-        render_login_footer()
-        st.rerun()
-    render_login_footer()
-    return False
+    return render_login_form("Generate Email")
 
 
 def main():
