@@ -310,9 +310,11 @@ def check_password():
         except (KeyError, FileNotFoundError):
             correct_password = "OSDTeam123"
         
-        if st.session_state["password"] == correct_password:
+        entered = st.session_state.get("password", "")
+        if entered == correct_password:
             st.session_state["password_correct"] = True
-            del st.session_state["password"]  # Don't store password
+            if "password" in st.session_state:
+                del st.session_state["password"]
         else:
             st.session_state["password_correct"] = False
     

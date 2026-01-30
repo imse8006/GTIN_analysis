@@ -157,9 +157,11 @@ def check_password():
             correct_password = st.secrets["PASSWORD"]
         except (KeyError, FileNotFoundError):
             correct_password = "OSDTeam123"
-        if st.session_state.get("password") == correct_password:
+        entered = st.session_state.get("password_gen_gtin", "")
+        if entered == correct_password:
             st.session_state["password_correct"] = True
-            del st.session_state["password"]
+            if "password_gen_gtin" in st.session_state:
+                del st.session_state["password_gen_gtin"]
         else:
             st.session_state["password_correct"] = False
 
@@ -168,7 +170,7 @@ def check_password():
     st.markdown('<div style="text-align: center; padding: 2rem;">', unsafe_allow_html=True)
     st.markdown('<div style="color: #94a3b8; font-size: 2.5rem; font-weight: 700;">Generic GTIN Analysis</div>', unsafe_allow_html=True)
     st.text_input("Password", type="password", on_change=password_entered, key="password_gen_gtin", label_visibility="visible")
-    if "password" in st.session_state and st.session_state.get("password_correct") is False:
+    if "password_gen_gtin" in st.session_state and st.session_state.get("password_correct") is False:
         st.error("Incorrect password")
     if st.session_state.get("password_correct", False):
         st.markdown('</div>', unsafe_allow_html=True)
