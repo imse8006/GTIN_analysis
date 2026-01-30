@@ -526,7 +526,10 @@ def analyze_inner_equals_outer(df, gtin_outer_col, gtin_inner_col):
     excluded = {"GENERIC_GTIN", "EXPLICIT_BLOCKED"}
     ok_outer = ~df["_outer_status"].isin(excluded) & df["gtin_outer_normalized"].notna()
     ok_inner = ~df["_inner_status"].isin(excluded) & df["gtin_inner_normalized"].notna()
-    inner_eq_outer_row = df["gtin_inner_normalized"] == df["gtin_outer_normalized"]
+    # Type-safe comparison so int/str mismatch doesn't hide same-row cases
+    outer_str = df["gtin_outer_normalized"].astype(str).str.strip()
+    inner_str = df["gtin_inner_normalized"].astype(str).str.strip()
+    inner_eq_outer_row = (inner_str == outer_str) & outer_str.ne("") & inner_str.ne("")
 
     # 1) Same row: Outer == Inner on the same row (excl. Generics/Placeholders)
     same_row_df = df[ok_outer & ok_inner & inner_eq_outer_row].copy()
@@ -579,6 +582,13 @@ def analyze_inner_equals_outer(df, gtin_outer_col, gtin_inner_col):
     other_entity_df = with_inner[with_inner["_inner_eq_outer_other"]].drop(
         columns=["_inner_eq_outer_same", "_inner_eq_outer_other"], errors="ignore"
     )
+    # Exclude any row where Outer = Inner on the same row (defensive: only "elsewhere" matches)
+    def not_same_row(g):
+        o = g["gtin_outer_normalized"].astype(str).str.strip()
+        i = g["gtin_inner_normalized"].astype(str).str.strip()
+        return o != i
+    same_entity_df = same_entity_df[not_same_row(same_entity_df)]
+    other_entity_df = other_entity_df[not_same_row(other_entity_df)]
 
     return {
         "same_row": {
