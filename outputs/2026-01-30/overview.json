@@ -50,6 +50,6 @@
   "valid_total": 50422,
   "valid_unique": 43764,
   "same_row_total": 5321,
-  "inner_eq_outer_same_entity_total": 1102,
-  "inner_eq_outer_other_entity_total": 14791
+  "inner_eq_outer_same_entity_total": 177,
+  "inner_eq_outer_other_entity_total": 7546
 }
