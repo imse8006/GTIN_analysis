@@ -1148,7 +1148,6 @@ def main():
             st.markdown("##### 📊 Distribution by Legal Entity")
             if len(suspect_results["by_entity"]) > 0:
                 st.dataframe(suspect_results["by_entity"], use_container_width=True, hide_index=True)
-                st.download_button("Download as Excel", data=to_excel_bytes(suspect_results["by_entity"]), file_name="suspect_by_entity.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_suspect_by_ent")
                 
                 # Chart
                 fig_suspect = px.bar(
@@ -1163,9 +1162,30 @@ def main():
             
             # Sample Suspect GTINs
             st.markdown("##### 📋 Sample Suspect GTINs")
-            suspect_list_df = pd.DataFrame({"Suspect GTIN": suspect_results["gtin_list"][:50]})
-            st.dataframe(suspect_list_df, use_container_width=True, hide_index=True)
-            st.download_button("Download as Excel (all Suspect GTINs)", data=to_excel_bytes(pd.DataFrame({"Suspect GTIN": suspect_results["gtin_list"]})), file_name="suspect_gtins_all.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_suspect_gtins_all")
+            # Get unique GTINs from gtin_list or extract from full_df if list is empty
+            if suspect_results.get("gtin_list") and len(suspect_results["gtin_list"]) > 0:
+                suspect_gtins = suspect_results["gtin_list"][:50]
+            elif len(suspect_results["full_df"]) > 0 and "gtin_outer_normalized" in suspect_results["full_df"].columns:
+                suspect_gtins = suspect_results["full_df"]["gtin_outer_normalized"].dropna().unique().tolist()[:50]
+            else:
+                suspect_gtins = []
+            
+            if len(suspect_gtins) > 0:
+                suspect_list_df = pd.DataFrame({"Suspect GTIN": suspect_gtins})
+                st.dataframe(suspect_list_df, use_container_width=True, hide_index=True)
+                
+                # Get all suspect GTINs for download
+                if suspect_results.get("gtin_list") and len(suspect_results["gtin_list"]) > 0:
+                    all_suspect_gtins = suspect_results["gtin_list"]
+                elif len(suspect_results["full_df"]) > 0 and "gtin_outer_normalized" in suspect_results["full_df"].columns:
+                    all_suspect_gtins = suspect_results["full_df"]["gtin_outer_normalized"].dropna().unique().tolist()
+                else:
+                    all_suspect_gtins = []
+                
+                if len(all_suspect_gtins) > 0:
+                    st.download_button("Download as Excel (all Suspect GTINs)", data=to_excel_bytes(pd.DataFrame({"Suspect GTIN": all_suspect_gtins})), file_name="suspect_gtins_all.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_suspect_gtins_all")
+            else:
+                st.info("No suspect GTINs to display.")
             
             # Detailed view
             with st.expander("View All Suspect GTIN Records"):
