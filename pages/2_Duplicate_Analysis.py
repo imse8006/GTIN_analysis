@@ -751,7 +751,7 @@ def main():
         }
         save_tracker_data(tracker_entry)
 
-    st.markdown(f'<div style="text-align: center; color: #cbd5e1; margin-bottom: 0.5rem;">📁 Source: <strong style="color: #94a3b8;">{source_file}</strong> — Extract: <strong style="color: #94a3b8;">{extract_date}</strong></div>', unsafe_allow_html=True)
+    st.markdown(f'<div style="text-align: center; color: #cbd5e1; margin-bottom: 0.5rem;">📁 Source: <strong style="color: #94a3b8;">{source_file}</strong></div>', unsafe_allow_html=True)
 
     # Filter section by Legal Entity (client-side filter on pre-computed data)
     legal_entities = overview.get("legal_entities", [])
