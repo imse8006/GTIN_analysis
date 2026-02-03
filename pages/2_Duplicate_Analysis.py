@@ -1123,7 +1123,23 @@ def main():
     # Tab 6: Suspect GTINs
     with tab6:
         st.markdown("#### 🔍 Suspect GTINs Analysis")
-        st.markdown("*GTINs with suspicious patterns (e.g., repeated digits like 18414900000000)*")
+        
+        st.markdown("""
+        **Detection Criteria:**
+        
+        A GTIN is marked as **Suspect** if it meets any of the following conditions:
+        
+        1. **Excessive digit repetition** : A single digit appears ≥ 60% of the GTIN length
+           - Example: `11111111111111` (digit 1 appears 14 times out of 14)
+           - Example: `18414900000000` (digit 0 appears 8 times out of 14)
+        
+        2. **Too many trailing zeros** : 
+           - At least 6 consecutive zeros at the end, OR
+           - Half the GTIN length (or more) in trailing zeros
+           - Example: `18414900000000` (8 zeros at the end out of 14 digits)
+        
+        **Note:** Generic GTINs are excluded from this analysis.
+        """)
         
         if suspect_results["total"] > 0:
             st.markdown(f"**Found {suspect_results['total']:,} records with {suspect_results['unique_gtins']:,} unique Suspect GTINs**")
