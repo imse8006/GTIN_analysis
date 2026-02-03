@@ -2,6 +2,7 @@
 Generic GTIN Analysis page: check if Generic GTINs CORRESPOND to the taxonomy.
 Taxonomy = first part of "OSD Classification" (before first dash), e.g. "BEEF" from "BEEF-YYYY-ZZZZ".
 Compare product's Generic GTIN to the expected Generic for that taxonomy (mapping).
+Only analyzes Generic GTINs with business_centres mapping: 10000000000009, 30000000000009, 40000000000009, 70000000000009.
 Data loaded from pre-computed outputs/ (run batch first).
 """
 import os
@@ -47,6 +48,12 @@ GENERIC_GTIN_TAXONOMY = {
     "50000000000009": {"lov": "Not in MDD", "business_centres": []},
     "60000000000009": {"lov": "Not in MDD", "business_centres": []},
     "80000000000009": {"lov": "Not in MDD", "business_centres": []},
+}
+
+# Generic GTINs with business_centres mapping (only these will be analyzed)
+GENERIC_GTINS_WITH_MAPPING = {
+    gtin for gtin, info in GENERIC_GTIN_TAXONOMY.items() 
+    if info["business_centres"]  # Only GTINs with non-empty business_centres
 }
 
 # Expected Generic GTIN per taxonomy (OSD prefix = part before first dash in "OSD Classification")
@@ -194,24 +201,24 @@ def main():
     non_conforming_df = non_conforming_df_full[non_conforming_df_full["Legal Entity"].isin(selected_entities)] if selected_entities and not non_conforming_df_full.empty else non_conforming_df_full
     generic_df = all_records_df[all_records_df["Legal Entity"].isin(selected_entities)] if selected_entities and not all_records_df.empty else all_records_df
 
-    # Filter: keep ONLY Generic GTINs that are in the mapping (GENERIC_GTINS)
+    # Filter: keep ONLY Generic GTINs that have business_centres mapping
     if "gtin_14" in generic_df.columns:
-        generic_df = generic_df[generic_df["gtin_14"].isin(GENERIC_GTINS)].copy()
+        generic_df = generic_df[generic_df["gtin_14"].isin(GENERIC_GTINS_WITH_MAPPING)].copy()
     elif "gtin_outer_normalized" in generic_df.columns:
         # Convert to 14 digits and filter
         gtin_14_series = generic_df["gtin_outer_normalized"].apply(lambda x: gtin_to_14(str(x)) if pd.notna(x) else "")
-        generic_df = generic_df[gtin_14_series.isin(GENERIC_GTINS)].copy()
+        generic_df = generic_df[gtin_14_series.isin(GENERIC_GTINS_WITH_MAPPING)].copy()
     
     # Filter non_conforming_df similarly
     if not non_conforming_df.empty:
         if "gtin_14" in non_conforming_df.columns:
-            non_conforming_df = non_conforming_df[non_conforming_df["gtin_14"].isin(GENERIC_GTINS)].copy()
+            non_conforming_df = non_conforming_df[non_conforming_df["gtin_14"].isin(GENERIC_GTINS_WITH_MAPPING)].copy()
         elif "gtin_outer_normalized" in non_conforming_df.columns:
             gtin_14_series_nc = non_conforming_df["gtin_outer_normalized"].apply(lambda x: gtin_to_14(str(x)) if pd.notna(x) else "")
-            non_conforming_df = non_conforming_df[gtin_14_series_nc.isin(GENERIC_GTINS)].copy()
+            non_conforming_df = non_conforming_df[gtin_14_series_nc.isin(GENERIC_GTINS_WITH_MAPPING)].copy()
 
     if len(generic_df) == 0:
-        st.info("No Generic GTINs in the selected Legal Entities.")
+        st.info("No Generic GTINs with business_centres mapping in the selected Legal Entities.")
         return
 
     # Recalculate by_ent from filtered generic_df to exclude entities without expected_gtin
@@ -250,8 +257,7 @@ def main():
     with col3:
         st.metric("Non-conforming", f"{non_conforming_count:,}", f"{100 - conforming_pct:.1f}%")
     with col4:
-        # No mapping metric removed since we filter out records without expected_gtin
-        st.metric("Records with mapping", f"{total_gen:,}", help="Generic GTINs with OSD prefix mapping")
+        st.metric("Records with mapping", f"{total_gen:,}", help="Generic GTINs with business_centres mapping (10000000000009, 30000000000009, 40000000000009, 70000000000009)")
 
     st.markdown('<div class="section-header">Non-conforming records</div>', unsafe_allow_html=True)
     if len(non_conforming_df) > 0:
