@@ -39,39 +39,19 @@ def main():
     # Table of Contents
     st.markdown('<div class="section-header">📑 Table of Contents</div>', unsafe_allow_html=True)
     toc = """
-    1. [GTIN Normalization](#normalisation)
-    2. [GTIN Classification](#classification)
-    3. [GTIN Quality Analysis](#qualite)
-    4. [Duplicate Analysis](#doublons)
-    5. [Generic GTINs](#generiques)
-    6. [Placeholder GTINs](#placeholder)
-    7. [Suspect GTINs](#suspects)
-    8. [Valid GTINs](#valides)
-    9. [Generic GTIN vs Taxonomy Analysis](#generic-taxonomy)
+    1. [GTIN Classification](#classification)
+    2. [GTIN Quality Analysis](#qualite)
+    3. [Duplicate Analysis](#doublons)
+    4. [Generic GTINs](#generiques)
+    5. [Placeholder GTINs](#placeholder)
+    6. [Suspect GTINs](#suspects)
+    7. [Valid GTINs](#valides)
+    8. [Generic GTIN vs Taxonomy Analysis](#generic-taxonomy)
     """
     st.markdown(toc)
 
-    # 1. Normalization
-    st.markdown('<div class="section-header" id="normalisation">1. GTIN Normalization</div>', unsafe_allow_html=True)
-    st.markdown("""
-    The `normalize_gtin()` function transforms raw GTIN values into normalized strings for analysis.
-    
-    **Normalization process:**
-    
-    1. **Null values** : `None`, `NaN`, empty strings → `None`
-    2. **Scientific notation** : Converts values like `1.23E+14` to integer (`123000000000000`)
-    3. **Floats with .0** : Removes trailing `.0` (e.g., `12345678901234.0` → `12345678901234`)
-    4. **Trim** : Removes leading/trailing spaces
-    
-    **Examples:**
-    - `"12345678901234.0"` → `"12345678901234"`
-    - `"1.23E+14"` → `"123000000000000"`
-    - `"  12345678901234  "` → `"12345678901234"`
-    - `None` or `""` → `None`
-    """)
-
-    # 2. Classification
-    st.markdown('<div class="section-header" id="classification">2. GTIN Classification</div>', unsafe_allow_html=True)
+    # 1. Classification
+    st.markdown('<div class="section-header" id="classification">1. GTIN Classification</div>', unsafe_allow_html=True)
     st.markdown("""
     The `classify_gtin_status()` function classifies each GTIN according to MDM rules.
     
@@ -91,8 +71,8 @@ def main():
     - If check digit is incorrect → marked as **SUSPECT**
     """)
 
-    # 3. Quality Analysis
-    st.markdown('<div class="section-header" id="qualite">3. GTIN Quality Analysis</div>', unsafe_allow_html=True)
+    # 2. Quality Analysis
+    st.markdown('<div class="section-header" id="qualite">2. GTIN Quality Analysis</div>', unsafe_allow_html=True)
     st.markdown("""
     **Page: GTIN Quality Dashboard**
     
@@ -112,10 +92,10 @@ def main():
     - 14 digits : Valid GTIN-14
     """)
 
-    # 4. Duplicate Analysis
-    st.markdown('<div class="section-header" id="doublons">4. Duplicate Analysis</div>', unsafe_allow_html=True)
+    # 3. Duplicate Analysis
+    st.markdown('<div class="section-header" id="doublons">3. Duplicate Analysis</div>', unsafe_allow_html=True)
     
-    st.markdown('<div class="subsection-header">4.1 Cross Duplicates</div>', unsafe_allow_html=True)
+    st.markdown('<div class="subsection-header">3.1 Cross Duplicates</div>', unsafe_allow_html=True)
     st.markdown("""
     **Definition** : GTINs that appear in both the GTIN-Outer AND GTIN-Inner columns.
     
@@ -124,7 +104,7 @@ def main():
     **Usage** : Identify GTINs shared between Outer and Inner, which may indicate data entry errors.
     """)
     
-    st.markdown('<div class="subsection-header">4.2 GTIN Outer Duplicates</div>', unsafe_allow_html=True)
+    st.markdown('<div class="subsection-header">3.2 GTIN Outer Duplicates</div>', unsafe_allow_html=True)
     st.markdown("""
     **Definition** : GTIN-Outer that appears multiple times in the dataset.
     
@@ -135,7 +115,7 @@ def main():
     - **Different entities** : The GTIN is shared between multiple Legal Entities (valid sharing)
     """)
     
-    st.markdown('<div class="subsection-header">4.3 GTIN Inner Duplicates</div>', unsafe_allow_html=True)
+    st.markdown('<div class="subsection-header">3.3 GTIN Inner Duplicates</div>', unsafe_allow_html=True)
     st.markdown("""
     **Definition** : GTIN-Inner that appears multiple times in the dataset.
     
@@ -144,7 +124,7 @@ def main():
     **Analysis** : Identifies duplicated inner GTINs, generally less problematic than Outer duplicates.
     """)
     
-    st.markdown('<div class="subsection-header">4.4 Outer = Inner (same row)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="subsection-header">3.4 Outer = Inner (same row)</div>', unsafe_allow_html=True)
     st.markdown("""
     **Definition** : On the same row, GTIN-Outer = GTIN-Inner.
     
@@ -153,7 +133,7 @@ def main():
     **Use case** : Identify products where Outer and Inner are identical (may be normal or suspect depending on context).
     """)
     
-    st.markdown('<div class="subsection-header">4.5 Inner = Outer (non-Generic)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="subsection-header">3.5 Inner = Outer (non-Generic)</div>', unsafe_allow_html=True)
     st.markdown("""
     **Definition** : GTIN-Inner that matches a GTIN-Outer from another row (same entity or other entity).
     
@@ -165,8 +145,8 @@ def main():
     **Usage** : Identify cases where Inner matches Outer from another product.
     """)
 
-    # 5. Generic GTINs
-    st.markdown('<div class="section-header" id="generiques">5. Generic GTINs</div>', unsafe_allow_html=True)
+    # 4. Generic GTINs
+    st.markdown('<div class="section-header" id="generiques">4. Generic GTINs</div>', unsafe_allow_html=True)
     st.markdown("""
     **Definition** : Generic GTINs used to represent product categories rather than specific products.
     
@@ -186,8 +166,8 @@ def main():
     - Identifies Generic GTIN duplicates
     """)
 
-    # 6. Placeholder GTINs
-    st.markdown('<div class="section-header" id="placeholder">6. Placeholder GTINs</div>', unsafe_allow_html=True)
+    # 5. Placeholder GTINs
+    st.markdown('<div class="section-header" id="placeholder">5. Placeholder GTINs</div>', unsafe_allow_html=True)
     st.markdown("""
     **Definition** : Explicitly blocked GTINs, composed only of 9s.
     
@@ -201,8 +181,8 @@ def main():
     **Usage** : Identify products without a real GTIN assigned.
     """)
 
-    # 7. Suspect GTINs
-    st.markdown('<div class="section-header" id="suspects">7. Suspect GTINs</div>', unsafe_allow_html=True)
+    # 6. Suspect GTINs
+    st.markdown('<div class="section-header" id="suspects">6. Suspect GTINs</div>', unsafe_allow_html=True)
     st.markdown("""
     **Definition** : GTINs with valid format but showing suspicious patterns.
     
@@ -222,8 +202,8 @@ def main():
     **Usage** : Identify GTINs that appear to be placeholders or data entry errors.
     """)
 
-    # 8. Valid GTINs
-    st.markdown('<div class="section-header" id="valides">8. Valid GTINs</div>', unsafe_allow_html=True)
+    # 7. Valid GTINs
+    st.markdown('<div class="section-header" id="valides">7. Valid GTINs</div>', unsafe_allow_html=True)
     st.markdown("""
     **Definition** : GTINs that pass all validations.
     
@@ -239,8 +219,8 @@ def main():
     - Distinguishes valid sharing (same GTIN, different entities) from problematic duplicates
     """)
 
-    # 9. Generic GTIN vs Taxonomy
-    st.markdown('<div class="section-header" id="generic-taxonomy">9. Generic GTIN vs Taxonomy Analysis</div>', unsafe_allow_html=True)
+    # 8. Generic GTIN vs Taxonomy
+    st.markdown('<div class="section-header" id="generic-taxonomy">8. Generic GTIN vs Taxonomy Analysis</div>', unsafe_allow_html=True)
     st.markdown("""
     **Page: Generic GTIN Analysis**
     
