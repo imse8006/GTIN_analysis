@@ -233,7 +233,13 @@ def analyze_suspect_gtins(df, gtin_outer_col):
     suspect_map = {v: is_suspect_gtin(v) for v in uniq_outer}
     df["is_suspect"] = df[gtin_outer_col].map(suspect_map).fillna(False)
     df["gtin_status"] = _classify_column_unique_then_map(df["gtin_outer_normalized"])
-    suspect_df = df[(df["is_suspect"] == True) & (df["gtin_status"] != "GENERIC_GTIN")].copy()
+    # Exclude Generic GTINs and Placeholders (99999999999999, etc.)
+    suspect_df = df[
+        (df["is_suspect"] == True) & 
+        (df["gtin_status"] != "GENERIC_GTIN") & 
+        (df["gtin_status"] != "EXPLICIT_BLOCKED") &
+        (df["gtin_status"] != "PLACEHOLDER")
+    ].copy()
     if len(suspect_df) == 0:
         return {"total": 0, "unique_gtins": 0, "by_entity": pd.DataFrame(), "gtin_list": [], "full_df": pd.DataFrame()}
     by_entity = suspect_df.groupby("Legal Entity").agg({gtin_outer_col: "count", "gtin_outer_normalized": "nunique"}).reset_index()
@@ -862,8 +868,20 @@ def load_output_results(output_dir: str, selected_entities: list = None):
     suspect_gtin_list = []
     
     if len(suspect_full_df) > 0 and "gtin_outer_normalized" in suspect_full_df.columns:
+        # Exclude Placeholders (99999999999999) if gtin_status column exists
+        if "gtin_status" in suspect_full_df.columns:
+            suspect_full_df = suspect_full_df[
+                (suspect_full_df["gtin_status"] != "PLACEHOLDER") &
+                (suspect_full_df["gtin_status"] != "EXPLICIT_BLOCKED")
+            ].copy()
+        # Also exclude by GTIN value directly (99999999999999)
+        suspect_full_df = suspect_full_df[
+            (suspect_full_df["gtin_outer_normalized"] != "99999999999999") &
+            (~suspect_full_df["gtin_outer_normalized"].astype(str).str.match(r"^9+$"))
+        ].copy()
         # Extract unique GTINs from loaded suspect records
-        suspect_gtin_list = suspect_full_df["gtin_outer_normalized"].dropna().unique().tolist()
+        if len(suspect_full_df) > 0:
+            suspect_gtin_list = suspect_full_df["gtin_outer_normalized"].dropna().unique().tolist()
     else:
         # Fallback: try to load from quality_full_classified.xlsx and detect suspects
         quality_full = _read("quality_full_classified.xlsx")
@@ -873,12 +891,15 @@ def load_output_results(output_dir: str, selected_entities: list = None):
             if entities and "Legal Entity" in quality_full.columns:
                 quality_filtered = quality_full[quality_full["Legal Entity"].isin(entities)].copy()
             
-            # Detect suspect GTINs using is_suspect_gtin function and exclude Generic GTINs
+            # Detect suspect GTINs using is_suspect_gtin function and exclude Generic GTINs and Placeholders
             if len(quality_filtered) > 0:
-                # Check if gtin_status column exists and exclude Generic
+                # Check if gtin_status column exists and exclude Generic and Placeholders
                 if "gtin_status" in quality_filtered.columns:
-                    # Exclude Generic GTINs
-                    quality_filtered = quality_filtered[quality_filtered["gtin_status"] != "GENERIC"].copy()
+                    # Exclude Generic GTINs and Placeholders (99999999999999, etc.)
+                    quality_filtered = quality_filtered[
+                        (quality_filtered["gtin_status"] != "GENERIC") &
+                        (quality_filtered["gtin_status"] != "PLACEHOLDER")
+                    ].copy()
                 
                 # Apply suspect detection on gtin_outer_normalized column (already normalized)
                 if len(quality_filtered) > 0 and "gtin_outer_normalized" in quality_filtered.columns:
@@ -892,7 +913,13 @@ def load_output_results(output_dir: str, selected_entities: list = None):
                         suspect_mask = quality_filtered["gtin_outer_normalized"].apply(is_suspect_gtin)
                         suspect_full_df = quality_filtered[suspect_mask].copy()
                         if len(suspect_full_df) > 0:
-                            suspect_gtin_list = suspect_full_df["gtin_outer_normalized"].dropna().unique().tolist()
+                            # Exclude Placeholders by GTIN value (99999999999999, etc.)
+                            suspect_full_df = suspect_full_df[
+                                (suspect_full_df["gtin_outer_normalized"] != "99999999999999") &
+                                (~suspect_full_df["gtin_outer_normalized"].astype(str).str.match(r"^9+$"))
+                            ].copy()
+                            if len(suspect_full_df) > 0:
+                                suspect_gtin_list = suspect_full_df["gtin_outer_normalized"].dropna().unique().tolist()
     
     suspect_results = {
         "total": suspect_by["Total Records"].astype(int).sum() if len(suspect_by) > 0 else 0,
