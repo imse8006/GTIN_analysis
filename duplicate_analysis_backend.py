@@ -705,6 +705,7 @@ def run_full_analysis(input_excel_path: str, output_dir: str = None, extract_dat
         ("generic_by_entity.xlsx", os.path.join(output_dir, "generic_by_entity.xlsx"), lambda: to_excel_bytes(generic_results["by_entity"])),
         ("placeholder_by_entity.xlsx", os.path.join(output_dir, "placeholder_by_entity.xlsx"), lambda: to_excel_bytes(placeholder_results["by_entity"])),
         ("suspect_by_entity.xlsx", os.path.join(output_dir, "suspect_by_entity.xlsx"), lambda: to_excel_bytes(suspect_results["by_entity"])),
+        ("suspect_records.xlsx", os.path.join(output_dir, "suspect_records.xlsx"), lambda: to_excel_bytes(suspect_results["full_df"])),
         ("valid_shared_gtins.xlsx", os.path.join(output_dir, "valid_shared_gtins.xlsx"), lambda: to_excel_bytes(valid_results["shared_gtins"])),
         ("valid_entity_sharing.xlsx", os.path.join(output_dir, "valid_entity_sharing.xlsx"), lambda: to_excel_bytes(valid_results["entity_sharing"])),
         ("outer_eq_inner_same_row.xlsx", os.path.join(output_dir, "outer_eq_inner_same_row.xlsx"), lambda: to_excel_bytes(inner_eq_outer_results["same_row"]["df"])),
@@ -856,29 +857,42 @@ def load_output_results(output_dir: str, selected_entities: list = None):
         "full_df": pd.DataFrame(),
     }
     suspect_by = _filter(_read("suspect_by_entity.xlsx"))
-    # Try to load suspect GTINs from quality_full_classified.xlsx
-    quality_full = _read("quality_full_classified.xlsx")
+    # Try to load suspect records from suspect_records.xlsx (saved by batch), or fallback to quality_full_classified.xlsx
+    suspect_full_df = _filter(_read("suspect_records.xlsx"))
     suspect_gtin_list = []
-    suspect_full_df = pd.DataFrame()
-    if len(quality_full) > 0 and gtin_outer_col in quality_full.columns and "gtin_outer_normalized" in quality_full.columns:
-        # Apply entity filter first if needed
-        quality_filtered = quality_full
-        if entities and "Legal Entity" in quality_full.columns:
-            quality_filtered = quality_full[quality_full["Legal Entity"].isin(entities)].copy()
-        
-        # Detect suspect GTINs using is_suspect_gtin function and exclude Generic GTINs
-        if len(quality_filtered) > 0:
-            # Check if gtin_status column exists and exclude Generic
-            if "gtin_status" in quality_filtered.columns:
-                # Exclude Generic GTINs
-                quality_filtered = quality_filtered[quality_filtered["gtin_status"] != "GENERIC"].copy()
+    
+    if len(suspect_full_df) > 0 and "gtin_outer_normalized" in suspect_full_df.columns:
+        # Extract unique GTINs from loaded suspect records
+        suspect_gtin_list = suspect_full_df["gtin_outer_normalized"].dropna().unique().tolist()
+    else:
+        # Fallback: try to load from quality_full_classified.xlsx and detect suspects
+        quality_full = _read("quality_full_classified.xlsx")
+        if len(quality_full) > 0 and "gtin_outer_normalized" in quality_full.columns:
+            # Apply entity filter first if needed
+            quality_filtered = quality_full
+            if entities and "Legal Entity" in quality_full.columns:
+                quality_filtered = quality_full[quality_full["Legal Entity"].isin(entities)].copy()
             
-            # Apply suspect detection on GTIN-Outer column
-            if len(quality_filtered) > 0 and gtin_outer_col in quality_filtered.columns:
-                suspect_mask = quality_filtered[gtin_outer_col].apply(is_suspect_gtin)
-                suspect_full_df = quality_filtered[suspect_mask].copy()
-                if len(suspect_full_df) > 0 and "gtin_outer_normalized" in suspect_full_df.columns:
-                    suspect_gtin_list = suspect_full_df["gtin_outer_normalized"].dropna().unique().tolist()
+            # Detect suspect GTINs using is_suspect_gtin function and exclude Generic GTINs
+            if len(quality_filtered) > 0:
+                # Check if gtin_status column exists and exclude Generic
+                if "gtin_status" in quality_filtered.columns:
+                    # Exclude Generic GTINs
+                    quality_filtered = quality_filtered[quality_filtered["gtin_status"] != "GENERIC"].copy()
+                
+                # Apply suspect detection on gtin_outer_normalized column (already normalized)
+                if len(quality_filtered) > 0 and "gtin_outer_normalized" in quality_filtered.columns:
+                    # Filter out None/NaN/empty values before applying is_suspect_gtin
+                    quality_filtered = quality_filtered[
+                        quality_filtered["gtin_outer_normalized"].notna() & 
+                        (quality_filtered["gtin_outer_normalized"].astype(str).str.strip() != "") &
+                        (quality_filtered["gtin_outer_normalized"].astype(str).str.strip().str.lower() != "nan")
+                    ].copy()
+                    if len(quality_filtered) > 0:
+                        suspect_mask = quality_filtered["gtin_outer_normalized"].apply(is_suspect_gtin)
+                        suspect_full_df = quality_filtered[suspect_mask].copy()
+                        if len(suspect_full_df) > 0:
+                            suspect_gtin_list = suspect_full_df["gtin_outer_normalized"].dropna().unique().tolist()
     
     suspect_results = {
         "total": suspect_by["Total Records"].astype(int).sum() if len(suspect_by) > 0 else 0,
