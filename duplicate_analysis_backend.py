@@ -490,12 +490,12 @@ def run_generic_analysis(df, gtin_outer_col, output_dir: str):
             json.dump({"total": 0, "legal_entities": [], "conforming_count": 0, "non_conforming_count": 0}, f, indent=2)
         return
     
-    # Filter: keep ONLY Generic GTINs that are in the mapping (GENERIC_GTIN_TAXONOMY)
+    # Filter: keep ONLY Generic GTINs that have business_centres mapping
     uniq_gtin = generic_df["gtin_outer_normalized"].dropna().unique()
     gtin_14_map = {v: _gtin_to_14(v) for v in uniq_gtin}
     generic_df["gtin_14"] = generic_df["gtin_outer_normalized"].map(gtin_14_map).fillna("")
-    # Keep only rows where gtin_14 is in GENERIC_GTIN_TAXONOMY keys
-    mapping_gtins = set(GENERIC_GTIN_TAXONOMY.keys())
+    # Keep only rows where gtin_14 has non-empty business_centres in GENERIC_GTIN_TAXONOMY
+    mapping_gtins = {gtin for gtin, info in GENERIC_GTIN_TAXONOMY.items() if info["business_centres"]}
     generic_df = generic_df[generic_df["gtin_14"].isin(mapping_gtins)].copy()
     
     if len(generic_df) == 0:

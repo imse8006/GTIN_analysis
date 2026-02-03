@@ -22,13 +22,22 @@ st.set_page_config(
 sys.path.append(str(Path(__file__).parent.parent))
 from export_utils import to_excel_bytes
 from auth_utils import render_login_form
-from duplicate_analysis_backend import list_output_dates, load_generic_results, load_manifest, OUTPUTS_BASE
+from duplicate_analysis_backend import list_output_dates, load_generic_results, load_manifest, OUTPUTS_BASE, load_duplicate_data_from_path
 
 
 @st.cache_data(ttl=3600)
 def _cached_load_generic_results(output_dir: str):
     """Cache Generic GTIN results (avoids re-reading Excel on every rerun)."""
     return load_generic_results(output_dir)
+
+@st.cache_data(ttl=3600)
+def _cached_load_source_file(file_path: str):
+    """Cache source file loading (avoids re-reading Excel on every rerun)."""
+    result = load_duplicate_data_from_path(file_path)
+    if result[0] is None:
+        return None, None, None
+    df, gtin_outer_col, _, _ = result
+    return df, gtin_outer_col, file_path
 
 # Generic GTIN set (same as other pages)
 GENERIC_GTINS = {
@@ -62,6 +71,9 @@ EXPECTED_GTIN_BY_TAXONOMY = {}
 for gtin_14, info in GENERIC_GTIN_TAXONOMY.items():
     for bc in info["business_centres"]:
         EXPECTED_GTIN_BY_TAXONOMY[bc.upper()] = gtin_14
+
+# Target taxonomies to analyze (filter products on these taxonomies only)
+TARGET_TAXONOMIES = {"BEEF", "PORK", "POULTRY", "SUPPLIES & EQUIPMENT", "SEAFOOD", "PRODUCE"}
 
 
 def normalize_gtin(value):
@@ -158,22 +170,66 @@ def main():
     selected_date_label = st.selectbox("**Extract date**", date_options, index=0, key="gen_gtin_date")
     output_dir = date_paths[selected_date_label]
 
-    with st.spinner("Loading data…"):
-        data = _cached_load_generic_results(output_dir)
-    if data is None:
-        st.error("Unable to load Generic GTIN results for this date (or no Generic GTINs in the data).")
+    # Load manifest to get source file path
+    manifest = load_manifest(output_dir)
+    source_file = manifest.get("source_file", "")
+    if not source_file:
+        st.error("Source file not found in manifest. Cannot load original data.")
+        return
+    
+    # Resolve source file path (could be relative or absolute)
+    if not os.path.isabs(source_file):
+        source_file = os.path.join(os.path.dirname(output_dir), "..", source_file)
+        source_file = os.path.normpath(source_file)
+    
+    if not os.path.isfile(source_file):
+        st.error(f"Source file not found: {source_file}")
         return
 
-    overview = data["overview"]
-    by_entity_df = data["by_entity_df"]
-    non_conforming_df_full = data["non_conforming_df"]
-    all_records_df = data["all_records_df"]
-    legal_entities = data["legal_entities"]
-    gtin_outer_col = data["gtin_outer_col"]
-
     st.markdown('<h1 class="main-header">Generic GTIN Analysis</h1>', unsafe_allow_html=True)
-    source_file = load_manifest(output_dir).get("source_file", "") or overview.get("source_file", "")
-    st.markdown(f'<div style="text-align: center; color: #cbd5e1; margin-bottom: 1rem;">Source: <strong style="color: #94a3b8;">{source_file}</strong> (from outputs)</div>', unsafe_allow_html=True)
+    st.markdown(f'<div style="text-align: center; color: #cbd5e1; margin-bottom: 1rem;">Source: <strong style="color: #94a3b8;">{os.path.basename(source_file)}</strong></div>', unsafe_allow_html=True)
+
+    with st.spinner("Loading source data…"):
+        df_source, gtin_outer_col, _ = _cached_load_source_file(source_file)
+        if df_source is None:
+            st.error("Failed to load source file.")
+            return
+
+    # Step 1: Filter on target taxonomies (BEEF, PORK, POULTRY, SUPPLIES & EQUIPMENT, SEAFOOD, PRODUCE)
+    osd_col = next((c for c in df_source.columns if str(c).strip().upper() == "OSD CLASSIFICATION"), None)
+    if osd_col is None:
+        st.error("OSD Classification column not found in source data.")
+        return
+    
+    # Extract OSD prefix (taxonomy) - first part before first dash
+    df_source["osd_prefix"] = df_source[osd_col].fillna("").astype(str).str.strip().str.split("-").str[0].str.strip().str.upper()
+    
+    # Filter on target taxonomies only
+    df_filtered = df_source[df_source["osd_prefix"].isin(TARGET_TAXONOMIES)].copy()
+    
+    if len(df_filtered) == 0:
+        st.info("No products found with target taxonomies (BEEF, PORK, POULTRY, SUPPLIES & EQUIPMENT, SEAFOOD, PRODUCE).")
+        return
+
+    # Step 2: Filter on Generic GTINs with mapping
+    # Normalize GTIN-Outer to 14 digits
+    gtin_outer_normalized = df_filtered[gtin_outer_col].fillna("").astype(str).str.strip()
+    gtin_14_series = gtin_outer_normalized.apply(lambda x: gtin_to_14(str(x)) if pd.notna(x) and str(x) else "")
+    df_filtered["gtin_14"] = gtin_14_series
+    
+    # Keep only Generic GTINs with business_centres mapping
+    df_filtered = df_filtered[df_filtered["gtin_14"].isin(GENERIC_GTINS_WITH_MAPPING)].copy()
+    
+    if len(df_filtered) == 0:
+        st.info("No Generic GTINs with business_centres mapping found in target taxonomies.")
+        return
+
+    # Step 3: Compare with expected GTINs
+    df_filtered["expected_gtin"] = df_filtered["osd_prefix"].map(EXPECTED_GTIN_BY_TAXONOMY)
+    df_filtered["conforming"] = df_filtered["expected_gtin"].notna() & (df_filtered["gtin_14"] == df_filtered["expected_gtin"])
+
+    # Get legal entities
+    legal_entities = sorted(df_filtered["Legal Entity"].dropna().unique().tolist())
 
     st.markdown('<div class="filter-section">', unsafe_allow_html=True)
     st.markdown("### Filters")
@@ -197,114 +253,63 @@ def main():
         st.warning("Please select at least one Legal Entity")
         return
 
-    by_ent = by_entity_df[by_entity_df["Legal Entity"].isin(selected_entities)] if selected_entities else by_entity_df
-    non_conforming_df = non_conforming_df_full[non_conforming_df_full["Legal Entity"].isin(selected_entities)] if selected_entities and not non_conforming_df_full.empty else non_conforming_df_full
-    generic_df = all_records_df[all_records_df["Legal Entity"].isin(selected_entities)] if selected_entities and not all_records_df.empty else all_records_df
+    # Filter by selected entities
+    df_filtered = df_filtered[df_filtered["Legal Entity"].isin(selected_entities)].copy()
 
-    # Filter: keep ONLY Generic GTINs that have business_centres mapping
-    if "gtin_14" in generic_df.columns:
-        generic_df = generic_df[generic_df["gtin_14"].isin(GENERIC_GTINS_WITH_MAPPING)].copy()
-    elif "gtin_outer_normalized" in generic_df.columns:
-        # Convert to 14 digits and filter
-        gtin_14_series = generic_df["gtin_outer_normalized"].apply(lambda x: gtin_to_14(str(x)) if pd.notna(x) else "")
-        generic_df = generic_df[gtin_14_series.isin(GENERIC_GTINS_WITH_MAPPING)].copy()
-    
-    # Filter non_conforming_df similarly
-    if not non_conforming_df.empty:
-        if "gtin_14" in non_conforming_df.columns:
-            non_conforming_df = non_conforming_df[non_conforming_df["gtin_14"].isin(GENERIC_GTINS_WITH_MAPPING)].copy()
-        elif "gtin_outer_normalized" in non_conforming_df.columns:
-            gtin_14_series_nc = non_conforming_df["gtin_outer_normalized"].apply(lambda x: gtin_to_14(str(x)) if pd.notna(x) else "")
-            non_conforming_df = non_conforming_df[gtin_14_series_nc.isin(GENERIC_GTINS_WITH_MAPPING)].copy()
-
-    if len(generic_df) == 0:
-        st.info("No Generic GTINs with business_centres mapping in the selected Legal Entities.")
-        return
-
-    # Recalculate by_ent from filtered generic_df to exclude entities without expected_gtin
-    if "conforming" in generic_df.columns and "Legal Entity" in generic_df.columns:
-        # Convert conforming column to numeric (handles both bool and string "True"/"False" from Excel)
-        conforming_series = generic_df["conforming"].astype(str).str.lower().map({"true": 1, "false": 0, "1": 1, "0": 0}).fillna(0).astype(int)
-        generic_df_temp = generic_df.copy()
-        generic_df_temp["_conforming_num"] = conforming_series
-        
-        count_col = "gtin_14" if "gtin_14" in generic_df.columns else "expected_gtin"
-        by_ent = generic_df_temp.groupby("Legal Entity").agg(
-            total=(count_col, "count"),
-            conforming=("_conforming_num", "sum"),
-        ).reset_index()
-        by_ent["non_conforming"] = by_ent["total"] - by_ent["conforming"]
-        by_ent["conforming_%"] = (by_ent["conforming"] / by_ent["total"] * 100).round(1)
-        by_ent = by_ent[by_ent["Legal Entity"].isin(selected_entities)] if selected_entities else by_ent
-    else:
-        # Fallback: filter by_ent to only entities present in filtered generic_df
-        entities_with_data = generic_df["Legal Entity"].unique() if "Legal Entity" in generic_df.columns else []
-        by_ent = by_ent[by_ent["Legal Entity"].isin(entities_with_data)] if len(entities_with_data) > 0 else pd.DataFrame()
-
-    # Columns are read as str from Excel; convert to numeric before sum (else .sum() concatenates strings)
-    conforming_count = int(pd.to_numeric(by_ent["conforming"], errors="coerce").fillna(0).sum()) if "conforming" in by_ent.columns and len(by_ent) > 0 else 0
-    non_conforming_count = int(pd.to_numeric(by_ent["non_conforming"], errors="coerce").fillna(0).sum()) if "non_conforming" in by_ent.columns and len(by_ent) > 0 else len(non_conforming_df)
-    total_gen = len(generic_df)
+    # Calculate statistics
+    total_gen = len(df_filtered)
+    conforming_count = int(df_filtered["conforming"].sum())
+    non_conforming_count = total_gen - conforming_count
     conforming_pct = (conforming_count / total_gen * 100) if total_gen > 0 else 0
 
+    # Group by entity for statistics
+    by_ent = df_filtered.groupby("Legal Entity").agg(
+        total=("gtin_14", "count"),
+        conforming=("conforming", "sum"),
+    ).reset_index()
+    by_ent["non_conforming"] = by_ent["total"] - by_ent["conforming"]
+    by_ent["conforming_%"] = (by_ent["conforming"] / by_ent["total"] * 100).round(1)
+    by_ent = by_ent.sort_values("non_conforming", ascending=False)
+
+    # Non-conforming records (with all original columns)
+    non_conforming_df = df_filtered[~df_filtered["conforming"]].copy()
+
     st.markdown('<div class="section-header">Conformity: Generic GTIN vs taxonomy (OSD prefix)</div>', unsafe_allow_html=True)
-    st.markdown("*Taxonomy = first part of **OSD Classification** (before first dash). Check: does the product's Generic GTIN match the expected one for that taxonomy?*")
-    col1, col2, col3, col4 = st.columns(4)
+    st.markdown("*Analysis filtered on taxonomies: **BEEF, PORK, POULTRY, SUPPLIES & EQUIPMENT, SEAFOOD, PRODUCE**. Taxonomy = first part of **OSD Classification** (before first dash). Check: does the product's Generic GTIN match the expected one for that taxonomy?*")
+    col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Total Generic records", f"{total_gen:,}")
+        st.metric("Total records", f"{total_gen:,}", help=f"Products with target taxonomies and Generic GTINs with mapping")
     with col2:
         st.metric("Conforming", f"{conforming_count:,}", f"{conforming_pct:.1f}%")
     with col3:
         st.metric("Non-conforming", f"{non_conforming_count:,}", f"{100 - conforming_pct:.1f}%")
-    with col4:
-        st.metric("Records with mapping", f"{total_gen:,}", help="Generic GTINs with business_centres mapping (10000000000009, 30000000000009, 40000000000009, 70000000000009)")
 
     st.markdown('<div class="section-header">Non-conforming records</div>', unsafe_allow_html=True)
     if len(non_conforming_df) > 0:
-        # Display comprehensive columns for preview (matching Excel export)
-        preview_cols = [
-            "OSD Classification",
-            "Legal Entity",
-            "SUPC",
-            "Local Product Description",
-            "Proprietary Product",
-            "Brand",
-            "Global Product Case Pack",
-            "Case Pack",
-            "Case Size",
-            "Case UOM",
-            "Generic GTIN",
-            gtin_outer_col,
-            "GTIN-Inner",
-            "gtin_inner_normalized",
-            "Vendor Product",
-            "Default Vendor",
-            "osd_prefix",
-            "gtin_14",
-            "expected_gtin",
-            "conforming"
-        ]
-        # Filter to only columns that exist in the dataframe
-        available_preview_cols = [c for c in preview_cols if c in non_conforming_df.columns]
-        if available_preview_cols:
-            st.dataframe(non_conforming_df[available_preview_cols].head(20), use_container_width=True, hide_index=True)
+        # Display overview with requested columns: SUPC, Description, OSD Taxonomy, GTIN expected, GTIN outer, Legal entity
+        overview_cols = ["SUPC", "Local Product Description", "osd_prefix", "expected_gtin", gtin_outer_col, "Legal Entity"]
+        # Filter to only columns that exist
+        available_overview_cols = [c for c in overview_cols if c in non_conforming_df.columns]
+        if available_overview_cols:
+            # Rename columns for display
+            display_df = non_conforming_df[available_overview_cols].copy()
+            display_df = display_df.rename(columns={
+                "osd_prefix": "OSD Taxonomy",
+                "expected_gtin": "GTIN Expected",
+                gtin_outer_col: "GTIN Outer",
+                "Local Product Description": "Description"
+            })
+            st.dataframe(display_df.head(20), use_container_width=True, hide_index=True)
             st.caption(f"Showing first 20 rows. Total: {len(non_conforming_df):,} non-conforming records.")
         else:
             st.dataframe(non_conforming_df.head(20), use_container_width=True, hide_index=True)
         
-        # Download: use pre-computed file if available (contains all original columns), otherwise generate from filtered df
-        _all_ent = set(selected_entities) == set(legal_entities)
-        _nc_path = os.path.join(output_dir, "generic_non_conforming.xlsx")
-        if _all_ent and os.path.isfile(_nc_path):
-            # Use pre-computed file with all original columns
-            with open(_nc_path, "rb") as _f:
-                _nc_bytes = _f.read()
-        else:
-            # Generate from filtered non_conforming_df (may not have all columns if filtered)
-            _nc_bytes = to_excel_bytes(non_conforming_df)
+        # Download: all original columns from source file (remove analysis columns we added)
+        analysis_cols = {"osd_prefix", "gtin_14", "expected_gtin", "conforming"}
+        original_cols = [c for c in non_conforming_df.columns if c not in analysis_cols]
+        non_conforming_export = non_conforming_df[original_cols].copy()
+        _nc_bytes = to_excel_bytes(non_conforming_export)
         st.download_button("Download as Excel (all original columns)", data=_nc_bytes, file_name="generic_non_conforming.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_non_conforming")
-        with st.expander("View all non-conforming records (all columns)"):
-            st.dataframe(non_conforming_df, use_container_width=True, hide_index=True)
     else:
         st.success("All Generic GTINs conform to the taxonomy (OSD prefix) mapping.")
 
@@ -329,42 +334,6 @@ def main():
         for bc, gtin in sorted(EXPECTED_GTIN_BY_TAXONOMY.items()):
             ref.append({"OSD prefix (taxonomy)": bc, "Expected Generic GTIN": gtin, "LOV": GENERIC_GTIN_TAXONOMY.get(gtin, {}).get("lov", "")})
         st.dataframe(pd.DataFrame(ref), use_container_width=True, hide_index=True)
-
-    st.markdown('<div class="section-header">Sample Generic records (with conformity)</div>', unsafe_allow_html=True)
-    # Display comprehensive columns for sample records
-    sample_cols = [
-        "OSD Classification",
-        "Legal Entity",
-        "SUPC",
-        "Local Product Description",
-        "Proprietary Product",
-        "Brand",
-        "Global Product Case Pack",
-        "Case Pack",
-        "Case Size",
-        "Case UOM",
-        "Generic GTIN",
-        gtin_outer_col,
-        "GTIN-Inner",
-        "gtin_inner_normalized",
-        "Vendor Product",
-        "Default Vendor",
-        "osd_prefix",
-        "gtin_14",
-        "expected_gtin",
-        "conforming"
-    ]
-    # Filter to only columns that exist in the dataframe
-    available_sample_cols = [c for c in sample_cols if c in generic_df.columns]
-    sample_df = generic_df[available_sample_cols].head(50) if available_sample_cols else generic_df.head(50)
-    st.dataframe(sample_df, use_container_width=True, hide_index=True)
-    _all_path = os.path.join(output_dir, "generic_all_records_with_conformity.xlsx")
-    if set(selected_entities) == set(legal_entities) and os.path.isfile(_all_path):
-        with open(_all_path, "rb") as _f:
-            _all_bytes = _f.read()
-    else:
-        _all_bytes = to_excel_bytes(generic_df[available_sample_cols] if available_sample_cols else generic_df)
-    st.download_button("Download as Excel (all records)", data=_all_bytes, file_name="generic_all_records_with_conformity.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_sample")
 
 
 if __name__ == "__main__":
