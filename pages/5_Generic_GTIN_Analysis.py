@@ -217,11 +217,14 @@ def main():
     # Extract OSD prefix (taxonomy) - first part before first dash
     df_filtered["osd_prefix"] = df_filtered[osd_col].fillna("").astype(str).str.strip().str.split("-").str[0].str.strip().str.upper()
 
-    # Step 3: Compare with expected GTINs (only for products with target taxonomies)
-    # For products with target taxonomies, check if GTIN matches expected
-    # For products without target taxonomies, they are still included but marked as non-conforming
+    # Step 3: Compare with expected GTINs
+    # For each Generic GTIN, determine the expected GTIN based on taxonomy
+    # If taxonomy is in mapping, use mapped GTIN; otherwise, use the Generic GTIN itself as expected
     df_filtered["expected_gtin"] = df_filtered["osd_prefix"].map(EXPECTED_GTIN_BY_TAXONOMY)
-    df_filtered["conforming"] = df_filtered["expected_gtin"].notna() & (df_filtered["gtin_14"] == df_filtered["expected_gtin"])
+    # For products without taxonomy mapping, set expected_gtin to the Generic GTIN itself
+    # This way we can still see what GTIN is expected even if taxonomy doesn't match
+    df_filtered["expected_gtin"] = df_filtered["expected_gtin"].fillna(df_filtered["gtin_14"])
+    df_filtered["conforming"] = df_filtered["osd_prefix"].isin(TARGET_TAXONOMIES) & (df_filtered["gtin_14"] == df_filtered["expected_gtin"])
 
     # Get legal entities
     legal_entities = sorted(df_filtered["Legal Entity"].dropna().unique().tolist())
