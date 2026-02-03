@@ -1189,15 +1189,18 @@ def main():
             
             # Detailed view
             with st.expander("View All Suspect GTIN Records"):
-                display_cols = ["Legal Entity", gtin_outer_col, "gtin_outer_normalized"]
-                if "SUPC" in suspect_results["full_df"].columns:
-                    display_cols.append("SUPC")
-                if "Local Product Description" in suspect_results["full_df"].columns:
-                    display_cols.append("Local Product Description")
-                
-                available_cols = [col for col in display_cols if col in suspect_results["full_df"].columns]
-                st.dataframe(suspect_results["full_df"][available_cols], use_container_width=True, hide_index=True)
-                st.download_button("Download as Excel (all records)", data=to_excel_bytes(suspect_results["full_df"][available_cols]), file_name="suspect_records_all.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_suspect_records_all")
+                if len(suspect_results["full_df"]) > 0:
+                    display_cols = ["Legal Entity", gtin_outer_col, "gtin_outer_normalized"]
+                    if "SUPC" in suspect_results["full_df"].columns:
+                        display_cols.append("SUPC")
+                    if "Local Product Description" in suspect_results["full_df"].columns:
+                        display_cols.append("Local Product Description")
+                    
+                    available_cols = [col for col in display_cols if col in suspect_results["full_df"].columns]
+                    st.dataframe(suspect_results["full_df"][available_cols], use_container_width=True, hide_index=True)
+                    st.download_button("Download as Excel (all records)", data=to_excel_bytes(suspect_results["full_df"][available_cols]), file_name="suspect_records_all.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_suspect_records_all")
+                else:
+                    st.info("No detailed records available. Please regenerate the analysis batch to include suspect GTIN details.")
         else:
             st.success("✅ No Suspect GTINs found!")
     

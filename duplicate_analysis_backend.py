@@ -856,12 +856,36 @@ def load_output_results(output_dir: str, selected_entities: list = None):
         "full_df": pd.DataFrame(),
     }
     suspect_by = _filter(_read("suspect_by_entity.xlsx"))
+    # Try to load suspect GTINs from quality_full_classified.xlsx
+    quality_full = _read("quality_full_classified.xlsx")
+    suspect_gtin_list = []
+    suspect_full_df = pd.DataFrame()
+    if len(quality_full) > 0 and gtin_outer_col in quality_full.columns and "gtin_outer_normalized" in quality_full.columns:
+        # Apply entity filter first if needed
+        quality_filtered = quality_full
+        if entities and "Legal Entity" in quality_full.columns:
+            quality_filtered = quality_full[quality_full["Legal Entity"].isin(entities)].copy()
+        
+        # Detect suspect GTINs using is_suspect_gtin function and exclude Generic GTINs
+        if len(quality_filtered) > 0:
+            # Check if gtin_status column exists and exclude Generic
+            if "gtin_status" in quality_filtered.columns:
+                # Exclude Generic GTINs
+                quality_filtered = quality_filtered[quality_filtered["gtin_status"] != "GENERIC"].copy()
+            
+            # Apply suspect detection on GTIN-Outer column
+            if len(quality_filtered) > 0 and gtin_outer_col in quality_filtered.columns:
+                suspect_mask = quality_filtered[gtin_outer_col].apply(is_suspect_gtin)
+                suspect_full_df = quality_filtered[suspect_mask].copy()
+                if len(suspect_full_df) > 0 and "gtin_outer_normalized" in suspect_full_df.columns:
+                    suspect_gtin_list = suspect_full_df["gtin_outer_normalized"].dropna().unique().tolist()
+    
     suspect_results = {
         "total": suspect_by["Total Records"].astype(int).sum() if len(suspect_by) > 0 else 0,
         "unique_gtins": suspect_by["Unique Suspect GTINs"].astype(int).sum() if len(suspect_by) > 0 and "Unique Suspect GTINs" in suspect_by.columns else 0,
         "by_entity": suspect_by,
-        "gtin_list": [],
-        "full_df": pd.DataFrame(),
+        "gtin_list": suspect_gtin_list,
+        "full_df": suspect_full_df,
     }
     valid_shared = _read("valid_shared_gtins.xlsx")
     valid_entity = _read("valid_entity_sharing.xlsx")
