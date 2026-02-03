@@ -75,6 +75,13 @@ for gtin_14, info in GENERIC_GTIN_TAXONOMY.items():
 # Target taxonomies to analyze (filter products on these taxonomies only)
 TARGET_TAXONOMIES = {"BEEF", "PORK", "POULTRY", "SUPPLIES & EQUIPMENT", "SEAFOOD", "PRODUCE"}
 
+# Reverse mapping: Generic GTIN -> Expected OSD Taxonomy (for display)
+EXPECTED_OSD_BY_GTIN = {}
+for gtin_14, info in GENERIC_GTIN_TAXONOMY.items():
+    if info["business_centres"]:
+        # Join multiple taxonomies with comma if multiple
+        EXPECTED_OSD_BY_GTIN[gtin_14] = ", ".join(info["business_centres"])
+
 
 def normalize_gtin(value):
     if pd.isna(value) or value is None:
@@ -224,6 +231,8 @@ def main():
     # For products without taxonomy mapping, set expected_gtin to the Generic GTIN itself
     # This way we can still see what GTIN is expected even if taxonomy doesn't match
     df_filtered["expected_gtin"] = df_filtered["expected_gtin"].fillna(df_filtered["gtin_14"])
+    # Add expected OSD taxonomy based on Generic GTIN
+    df_filtered["expected_osd"] = df_filtered["gtin_14"].map(EXPECTED_OSD_BY_GTIN)
     df_filtered["conforming"] = df_filtered["osd_prefix"].isin(TARGET_TAXONOMIES) & (df_filtered["gtin_14"] == df_filtered["expected_gtin"])
 
     # Get legal entities
@@ -284,8 +293,8 @@ def main():
 
     st.markdown('<div class="section-header">Non-conforming records</div>', unsafe_allow_html=True)
     if len(non_conforming_df) > 0:
-        # Display overview with requested columns: SUPC, Description, OSD Taxonomy, GTIN expected, GTIN outer, Legal entity
-        overview_cols = ["SUPC", "Local Product Description", "osd_prefix", "expected_gtin", gtin_outer_col, "Legal Entity"]
+        # Display overview with requested columns: SUPC, Description, OSD Taxonomy, OSD expected, GTIN outer, Legal entity
+        overview_cols = ["SUPC", "Local Product Description", "osd_prefix", "expected_osd", gtin_outer_col, "Legal Entity"]
         # Filter to only columns that exist
         available_overview_cols = [c for c in overview_cols if c in non_conforming_df.columns]
         if available_overview_cols:
@@ -293,7 +302,7 @@ def main():
             display_df = non_conforming_df[available_overview_cols].copy()
             display_df = display_df.rename(columns={
                 "osd_prefix": "OSD Taxonomy",
-                "expected_gtin": "GTIN Expected",
+                "expected_osd": "OSD Expected",
                 gtin_outer_col: "GTIN Outer",
                 "Local Product Description": "Description"
             })
@@ -303,7 +312,7 @@ def main():
             st.dataframe(non_conforming_df.head(20), use_container_width=True, hide_index=True)
         
         # Download: all original columns from source file (remove analysis columns we added)
-        analysis_cols = {"osd_prefix", "gtin_14", "expected_gtin", "conforming"}
+        analysis_cols = {"osd_prefix", "gtin_14", "expected_gtin", "expected_osd", "conforming"}
         original_cols = [c for c in non_conforming_df.columns if c not in analysis_cols]
         non_conforming_export = non_conforming_df[original_cols].copy()
         _nc_bytes = to_excel_bytes(non_conforming_export)
