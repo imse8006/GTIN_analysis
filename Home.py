@@ -1,7 +1,7 @@
 """
 Main entry point for Streamlit multi-page app.
 This file allows Streamlit to detect the pages/ directory automatically.
-The actual dashboard is in pages/1_GTIN_Quality_Dashboard.py
+Redirects to the Documentation page by default.
 """
 
 import streamlit as st
@@ -14,5 +14,5 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Redirect to main dashboard
-st.switch_page("pages/1_GTIN_Quality_Dashboard.py")
+# Redirect to Documentation page
+st.switch_page("pages/0_Documentation.py")
