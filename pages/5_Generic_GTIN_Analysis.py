@@ -195,36 +195,31 @@ def main():
             st.error("Failed to load source file.")
             return
 
-    # Step 1: Filter on target taxonomies (BEEF, PORK, POULTRY, SUPPLIES & EQUIPMENT, SEAFOOD, PRODUCE)
-    osd_col = next((c for c in df_source.columns if str(c).strip().upper() == "OSD CLASSIFICATION"), None)
+    # Step 1: Filter on Generic GTINs with mapping FIRST (10000000000009, 30000000000009, 40000000000009, 70000000000009)
+    # Normalize GTIN-Outer to 14 digits
+    gtin_outer_normalized = df_source[gtin_outer_col].fillna("").astype(str).str.strip()
+    gtin_14_series = gtin_outer_normalized.apply(lambda x: gtin_to_14(str(x)) if pd.notna(x) and str(x) else "")
+    df_source["gtin_14"] = gtin_14_series
+    
+    # Keep only Generic GTINs with business_centres mapping
+    df_filtered = df_source[df_source["gtin_14"].isin(GENERIC_GTINS_WITH_MAPPING)].copy()
+    
+    if len(df_filtered) == 0:
+        st.info("No Generic GTINs with business_centres mapping found.")
+        return
+
+    # Step 2: Extract OSD prefix (taxonomy) for comparison
+    osd_col = next((c for c in df_filtered.columns if str(c).strip().upper() == "OSD CLASSIFICATION"), None)
     if osd_col is None:
         st.error("OSD Classification column not found in source data.")
         return
     
     # Extract OSD prefix (taxonomy) - first part before first dash
-    df_source["osd_prefix"] = df_source[osd_col].fillna("").astype(str).str.strip().str.split("-").str[0].str.strip().str.upper()
-    
-    # Filter on target taxonomies only
-    df_filtered = df_source[df_source["osd_prefix"].isin(TARGET_TAXONOMIES)].copy()
-    
-    if len(df_filtered) == 0:
-        st.info("No products found with target taxonomies (BEEF, PORK, POULTRY, SUPPLIES & EQUIPMENT, SEAFOOD, PRODUCE).")
-        return
+    df_filtered["osd_prefix"] = df_filtered[osd_col].fillna("").astype(str).str.strip().str.split("-").str[0].str.strip().str.upper()
 
-    # Step 2: Filter on Generic GTINs with mapping
-    # Normalize GTIN-Outer to 14 digits
-    gtin_outer_normalized = df_filtered[gtin_outer_col].fillna("").astype(str).str.strip()
-    gtin_14_series = gtin_outer_normalized.apply(lambda x: gtin_to_14(str(x)) if pd.notna(x) and str(x) else "")
-    df_filtered["gtin_14"] = gtin_14_series
-    
-    # Keep only Generic GTINs with business_centres mapping
-    df_filtered = df_filtered[df_filtered["gtin_14"].isin(GENERIC_GTINS_WITH_MAPPING)].copy()
-    
-    if len(df_filtered) == 0:
-        st.info("No Generic GTINs with business_centres mapping found in target taxonomies.")
-        return
-
-    # Step 3: Compare with expected GTINs
+    # Step 3: Compare with expected GTINs (only for products with target taxonomies)
+    # For products with target taxonomies, check if GTIN matches expected
+    # For products without target taxonomies, they are still included but marked as non-conforming
     df_filtered["expected_gtin"] = df_filtered["osd_prefix"].map(EXPECTED_GTIN_BY_TAXONOMY)
     df_filtered["conforming"] = df_filtered["expected_gtin"].notna() & (df_filtered["gtin_14"] == df_filtered["expected_gtin"])
 
@@ -275,10 +270,10 @@ def main():
     non_conforming_df = df_filtered[~df_filtered["conforming"]].copy()
 
     st.markdown('<div class="section-header">Conformity: Generic GTIN vs taxonomy (OSD prefix)</div>', unsafe_allow_html=True)
-    st.markdown("*Analysis filtered on taxonomies: **BEEF, PORK, POULTRY, SUPPLIES & EQUIPMENT, SEAFOOD, PRODUCE**. Taxonomy = first part of **OSD Classification** (before first dash). Check: does the product's Generic GTIN match the expected one for that taxonomy?*")
+    st.markdown("*Analysis filtered on Generic GTINs: **10000000000009, 30000000000009, 40000000000009, 70000000000009**. Taxonomy = first part of **OSD Classification** (before first dash). Check: does the product's Generic GTIN match the expected one for that taxonomy? (Expected taxonomies: BEEF, PORK, POULTRY, SUPPLIES & EQUIPMENT, SEAFOOD, PRODUCE)*")
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Total records", f"{total_gen:,}", help=f"Products with target taxonomies and Generic GTINs with mapping")
+        st.metric("Total records", f"{total_gen:,}", help=f"Products with Generic GTINs: 10000000000009, 30000000000009, 40000000000009, 70000000000009")
     with col2:
         st.metric("Conforming", f"{conforming_count:,}", f"{conforming_pct:.1f}%")
     with col3:
