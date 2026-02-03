@@ -125,7 +125,7 @@ def main():
 
     output_dates = list_output_dates()
     if not output_dates:
-        st.info(f"Aucun résultat pré-calculé. Exécutez le batch puis rechargez. Résultats dans `{OUTPUTS_BASE}/YYYY-MM-DD/`.")
+        st.info(f"No pre-computed results. Run the batch then reload. Results in `{OUTPUTS_BASE}/YYYY-MM-DD/`.")
         return
 
     date_options = [f"{d[0]} ({d[1]})" for d in output_dates]
@@ -135,13 +135,13 @@ def main():
 
     email_reports = list_email_reports(output_dir)
     if not email_reports:
-        st.warning("Aucun rapport email pour cette date (dossier email_reports/ vide).")
+        st.warning("No email report for this date (email_reports/ folder is empty).")
         return
 
     entity_options = [e[0] for e in email_reports]
     entity_to_path = {e[0]: e[1] for e in email_reports}
 
-    st.markdown(f'<div style="text-align: center; color: #cbd5e1; margin-bottom: 1rem;">📁 Source: <strong style="color: #94a3b8;">outputs</strong> (rapports pré-générés par Legal Entity)</div>', unsafe_allow_html=True)
+    st.markdown(f'<div style="text-align: center; color: #cbd5e1; margin-bottom: 1rem;">📁 Source: <strong style="color: #94a3b8;">outputs</strong> (pre-generated reports by Legal Entity)</div>', unsafe_allow_html=True)
     st.markdown('<div class="section-header">Select Legal Entity</div>', unsafe_allow_html=True)
     col1, col2 = st.columns([2, 1])
     with col1:

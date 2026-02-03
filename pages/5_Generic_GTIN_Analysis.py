@@ -143,7 +143,7 @@ def main():
 
     output_dates = list_output_dates()
     if not output_dates:
-        st.info(f"Aucun résultat pré-calculé. Exécutez le batch puis rechargez. Résultats dans `{OUTPUTS_BASE}/YYYY-MM-DD/`.")
+        st.info(f"No pre-computed results. Run the batch then reload. Results in `{OUTPUTS_BASE}/YYYY-MM-DD/`.")
         return
 
     date_options = [f"{d[0]} ({d[1]})" for d in output_dates]
@@ -151,10 +151,10 @@ def main():
     selected_date_label = st.selectbox("**Extract date**", date_options, index=0, key="gen_gtin_date")
     output_dir = date_paths[selected_date_label]
 
-    with st.spinner("Chargement des données…"):
+    with st.spinner("Loading data…"):
         data = _cached_load_generic_results(output_dir)
     if data is None:
-        st.error("Impossible de charger les résultats Generic GTIN pour cette date (ou aucun Generic dans les données).")
+        st.error("Unable to load Generic GTIN results for this date (or no Generic GTINs in the data).")
         return
 
     overview = data["overview"]
@@ -194,13 +194,39 @@ def main():
     non_conforming_df = non_conforming_df_full[non_conforming_df_full["Legal Entity"].isin(selected_entities)] if selected_entities and not non_conforming_df_full.empty else non_conforming_df_full
     generic_df = all_records_df[all_records_df["Legal Entity"].isin(selected_entities)] if selected_entities and not all_records_df.empty else all_records_df
 
+    # Filter out records without expected_gtin (no mapping)
+    if "expected_gtin" in generic_df.columns:
+        generic_df = generic_df[generic_df["expected_gtin"].notna()].copy()
+    if "expected_gtin" in non_conforming_df.columns and not non_conforming_df.empty:
+        non_conforming_df = non_conforming_df[non_conforming_df["expected_gtin"].notna()].copy()
+
     if len(generic_df) == 0:
         st.info("No Generic GTINs in the selected Legal Entities.")
         return
 
+    # Recalculate by_ent from filtered generic_df to exclude entities without expected_gtin
+    if "conforming" in generic_df.columns and "Legal Entity" in generic_df.columns:
+        # Convert conforming column to numeric (handles both bool and string "True"/"False" from Excel)
+        conforming_series = generic_df["conforming"].astype(str).str.lower().map({"true": 1, "false": 0, "1": 1, "0": 0}).fillna(0).astype(int)
+        generic_df_temp = generic_df.copy()
+        generic_df_temp["_conforming_num"] = conforming_series
+        
+        count_col = "gtin_14" if "gtin_14" in generic_df.columns else "expected_gtin"
+        by_ent = generic_df_temp.groupby("Legal Entity").agg(
+            total=(count_col, "count"),
+            conforming=("_conforming_num", "sum"),
+        ).reset_index()
+        by_ent["non_conforming"] = by_ent["total"] - by_ent["conforming"]
+        by_ent["conforming_%"] = (by_ent["conforming"] / by_ent["total"] * 100).round(1)
+        by_ent = by_ent[by_ent["Legal Entity"].isin(selected_entities)] if selected_entities else by_ent
+    else:
+        # Fallback: filter by_ent to only entities present in filtered generic_df
+        entities_with_data = generic_df["Legal Entity"].unique() if "Legal Entity" in generic_df.columns else []
+        by_ent = by_ent[by_ent["Legal Entity"].isin(entities_with_data)] if len(entities_with_data) > 0 else pd.DataFrame()
+
     # Columns are read as str from Excel; convert to numeric before sum (else .sum() concatenates strings)
-    conforming_count = int(pd.to_numeric(by_ent["conforming"], errors="coerce").fillna(0).sum()) if "conforming" in by_ent.columns else 0
-    non_conforming_count = int(pd.to_numeric(by_ent["non_conforming"], errors="coerce").fillna(0).sum()) if "non_conforming" in by_ent.columns else len(non_conforming_df)
+    conforming_count = int(pd.to_numeric(by_ent["conforming"], errors="coerce").fillna(0).sum()) if "conforming" in by_ent.columns and len(by_ent) > 0 else 0
+    non_conforming_count = int(pd.to_numeric(by_ent["non_conforming"], errors="coerce").fillna(0).sum()) if "non_conforming" in by_ent.columns and len(by_ent) > 0 else len(non_conforming_df)
     total_gen = len(generic_df)
     conforming_pct = (conforming_count / total_gen * 100) if total_gen > 0 else 0
 
@@ -214,8 +240,8 @@ def main():
     with col3:
         st.metric("Non-conforming", f"{non_conforming_count:,}", f"{100 - conforming_pct:.1f}%")
     with col4:
-        no_map = generic_df["expected_gtin"].isna().sum() if "expected_gtin" in generic_df.columns else 0
-        st.metric("No mapping (OSD prefix)", f"{no_map:,}", help="OSD prefix not in mapping (e.g. GROCERY, BAKERY)")
+        # No mapping metric removed since we filter out records without expected_gtin
+        st.metric("Records with mapping", f"{total_gen:,}", help="Generic GTINs with OSD prefix mapping")
 
     st.markdown('<div class="section-header">Non-conforming records</div>', unsafe_allow_html=True)
     if len(non_conforming_df) > 0:

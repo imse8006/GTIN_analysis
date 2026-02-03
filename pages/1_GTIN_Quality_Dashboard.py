@@ -337,9 +337,9 @@ def main():
     output_dates = list_output_dates()
     if not output_dates:
         st.info(
-            f"Aucun résultat pré-calculé. Exécutez le batch puis rechargez:\n\n"
-            f"`python run_duplicate_analysis_batch.py [fichier.xlsx]`\n\n"
-            f"Résultats dans `{OUTPUTS_BASE}/YYYY-MM-DD/`."
+            f"No pre-computed results. Run the batch then reload:\n\n"
+            f"`python run_duplicate_analysis_batch.py [file.xlsx]`\n\n"
+            f"Results in `{OUTPUTS_BASE}/YYYY-MM-DD/`."
         )
         return
 
@@ -351,11 +351,11 @@ def main():
     load_ph = st.empty()
     with load_ph.container():
         st.markdown("<div style='text-align: center; padding: 4rem 2rem; color: #94a3b8;'>", unsafe_allow_html=True)
-        with st.spinner("Chargement des données…"):
+        with st.spinner("Loading data…"):
             data = _cached_load_quality_results(output_dir)
         st.markdown("</div>", unsafe_allow_html=True)
     if data is None:
-        st.error("Impossible de charger les résultats Quality pour cette date.")
+        st.error("Unable to load Quality results for this date.")
         return
     load_ph.empty()
 

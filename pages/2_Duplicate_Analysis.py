@@ -700,9 +700,9 @@ def main():
     output_dates = list_output_dates()
     if not output_dates:
         st.info(
-            f"Aucun résultat pré-calculé. Exécutez le batch puis rechargez cette page:\n\n"
-            f"`python run_duplicate_analysis_batch.py [fichier.xlsx]`\n\n"
-            f"Les résultats seront écrits dans `{OUTPUTS_BASE}/YYYY-MM-DD/`."
+            f"No pre-computed results. Run the batch then reload this page:\n\n"
+            f"`python run_duplicate_analysis_batch.py [file.xlsx]`\n\n"
+            f"Results will be written to `{OUTPUTS_BASE}/YYYY-MM-DD/`."
         )
         st.code("python run_duplicate_analysis_batch.py all-products-prod-2026-01-22_15.44.25.xlsx", language="bash")
         return
@@ -714,15 +714,15 @@ def main():
         "**Extract date**",
         date_options,
         index=0,
-        help="Dernier run en premier. Lancez le batch pour ajouter une date.",
+        help="Latest run first. Run the batch to add a date.",
         key="dup_select_date",
     )
     output_dir = date_paths[selected_date_label]
 
-    with st.spinner("Chargement des résultats…"):
+    with st.spinner("Loading results…"):
         loaded = _cached_load_output_results(output_dir, None)
     if loaded is None:
-        st.error("Impossible de charger les résultats pour cette date.")
+        st.error("Unable to load results for this date.")
         return
     overview, manifest, duplicate_results, generic_results, placeholder_results, suspect_results, valid_results, inner_eq_outer_results, total_rows, gtin_outer_col, gtin_inner_col = loaded
     source_file = overview.get("source_file", "")
@@ -767,7 +767,7 @@ def main():
             "**Select Legal Entities**",
             legal_entities,
             default=st.session_state.selected_entities_duplicate,
-            help="Filtrer les résultats affichés par Legal Entity.",
+            help="Filter displayed results by Legal Entity.",
         )
         st.session_state.selected_entities_duplicate = selected_entities
 
@@ -788,7 +788,7 @@ def main():
         return
 
     # Re-load with entity filter so metrics/tables reflect selection
-    with st.spinner("Application du filtre Legal Entity…"):
+    with st.spinner("Applying Legal Entity filter…"):
         loaded = _cached_load_output_results(output_dir, tuple(selected_entities) if selected_entities else None)
     if loaded is None:
         return
@@ -1268,7 +1268,7 @@ def main():
         st.markdown("#### Inner = Outer (non-Generic)")
         st.markdown("*GTIN Inner that equal a GTIN Outer somewhere, excluding Generic Outers. Two sub-analyses: same Legal Entity vs different Legal Entities.*")
         
-        with st.spinner("Chargement des données Inner = Outer (non-Generic)…"):
+        with st.spinner("Loading Inner = Outer (non-Generic) data…"):
             if not inner_eq_outer_results["has_inner"]:
                 st.info("GTIN Inner column not found. This analysis requires both Outer and Inner columns.")
             else:
