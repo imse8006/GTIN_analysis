@@ -480,7 +480,9 @@ def main():
     
     compliance_rate = (total_valid / filtered_len * 100) if filtered_len > 0 else 0
     invalid_rate = (total_invalid / filtered_len * 100) if filtered_len > 0 else 0
-    
+    generic_rate = (total_generic / filtered_len * 100) if filtered_len > 0 else 0
+    placeholder_rate = (total_blocked / filtered_len * 100) if filtered_len > 0 else 0
+
     col1, col2, col3, col4, col5, col6, col7 = st.columns(7)
     with col1:
         st.metric("Total Products", f"{filtered_len:,}")
@@ -489,9 +491,9 @@ def main():
     with col3:
         st.metric("❌ Invalid GTINs", f"{total_invalid:,}", f"{invalid_rate:.1f}%")
     with col4:
-        st.metric("Generic GTINs", f"{total_generic:,}")
+        st.metric("Generic GTINs", f"{total_generic:,}", f"{generic_rate:.1f}%")
     with col5:
-        st.metric("Placeholder GTINs (999...99)", f"{total_blocked:,}")
+        st.metric("Placeholder GTINs (999...99)", f"{total_blocked:,}", f"{placeholder_rate:.1f}%")
     with col6:
         st.metric("Breakdown", f"{total_8}/{total_13}/{total_14}", help="8 digits / 13 digits / 14 digits")
     with col7:
