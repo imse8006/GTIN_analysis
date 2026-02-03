@@ -486,8 +486,13 @@ def analyze_suspect_gtins(df, gtin_outer_col):
         lambda x: classify_gtin_status(x) if x is not None else "MISSING"
     )
     
-    # Filter: suspect AND not generic
-    suspect_df = df[(df["is_suspect"] == True) & (df["gtin_status"] != "GENERIC_GTIN")].copy()
+    # Filter: suspect AND not generic AND not placeholder (EXPLICIT_BLOCKED / PLACEHOLDER)
+    suspect_df = df[
+        (df["is_suspect"] == True)
+        & (df["gtin_status"] != "GENERIC_GTIN")
+        & (df["gtin_status"] != "EXPLICIT_BLOCKED")
+        & (df["gtin_status"] != "PLACEHOLDER")
+    ].copy()
     
     if len(suspect_df) == 0:
         return {
