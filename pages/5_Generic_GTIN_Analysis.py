@@ -194,11 +194,21 @@ def main():
     non_conforming_df = non_conforming_df_full[non_conforming_df_full["Legal Entity"].isin(selected_entities)] if selected_entities and not non_conforming_df_full.empty else non_conforming_df_full
     generic_df = all_records_df[all_records_df["Legal Entity"].isin(selected_entities)] if selected_entities and not all_records_df.empty else all_records_df
 
-    # Filter out records without expected_gtin (no mapping)
-    if "expected_gtin" in generic_df.columns:
-        generic_df = generic_df[generic_df["expected_gtin"].notna()].copy()
-    if "expected_gtin" in non_conforming_df.columns and not non_conforming_df.empty:
-        non_conforming_df = non_conforming_df[non_conforming_df["expected_gtin"].notna()].copy()
+    # Filter: keep ONLY Generic GTINs that are in the mapping (GENERIC_GTINS)
+    if "gtin_14" in generic_df.columns:
+        generic_df = generic_df[generic_df["gtin_14"].isin(GENERIC_GTINS)].copy()
+    elif "gtin_outer_normalized" in generic_df.columns:
+        # Convert to 14 digits and filter
+        gtin_14_series = generic_df["gtin_outer_normalized"].apply(lambda x: gtin_to_14(str(x)) if pd.notna(x) else "")
+        generic_df = generic_df[gtin_14_series.isin(GENERIC_GTINS)].copy()
+    
+    # Filter non_conforming_df similarly
+    if not non_conforming_df.empty:
+        if "gtin_14" in non_conforming_df.columns:
+            non_conforming_df = non_conforming_df[non_conforming_df["gtin_14"].isin(GENERIC_GTINS)].copy()
+        elif "gtin_outer_normalized" in non_conforming_df.columns:
+            gtin_14_series_nc = non_conforming_df["gtin_outer_normalized"].apply(lambda x: gtin_to_14(str(x)) if pd.notna(x) else "")
+            non_conforming_df = non_conforming_df[gtin_14_series_nc.isin(GENERIC_GTINS)].copy()
 
     if len(generic_df) == 0:
         st.info("No Generic GTINs in the selected Legal Entities.")
@@ -245,23 +255,27 @@ def main():
 
     st.markdown('<div class="section-header">Non-conforming records</div>', unsafe_allow_html=True)
     if len(non_conforming_df) > 0:
-        display_nc = non_conforming_df.copy()
-        for col in ["Expected Generic", "expected_gtin"]:
-            if col in display_nc.columns:
-                display_nc[col] = display_nc[col].fillna("— (no mapping)")
-                break
-        st.dataframe(display_nc, use_container_width=True, hide_index=True)
+        # Display sample columns for preview
+        preview_cols = [c for c in ["Legal Entity", "SUPC", "Local Product Description", "Brand", "OSD Classification", gtin_outer_col] if c in non_conforming_df.columns]
+        if preview_cols:
+            st.dataframe(non_conforming_df[preview_cols].head(20), use_container_width=True, hide_index=True)
+            st.caption(f"Showing first 20 rows. Total: {len(non_conforming_df):,} non-conforming records.")
+        else:
+            st.dataframe(non_conforming_df.head(20), use_container_width=True, hide_index=True)
+        
+        # Download: use pre-computed file if available (contains all original columns), otherwise generate from filtered df
         _all_ent = set(selected_entities) == set(legal_entities)
         _nc_path = os.path.join(output_dir, "generic_non_conforming.xlsx")
         if _all_ent and os.path.isfile(_nc_path):
+            # Use pre-computed file with all original columns
             with open(_nc_path, "rb") as _f:
                 _nc_bytes = _f.read()
         else:
+            # Generate from filtered non_conforming_df (may not have all columns if filtered)
             _nc_bytes = to_excel_bytes(non_conforming_df)
-        st.download_button("Download as Excel", data=_nc_bytes, file_name="generic_non_conforming.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_non_conforming")
-        with st.expander("View full non-conforming records (all columns)"):
-            full_cols = [c for c in ["Legal Entity", "osd_prefix", "gtin_14", "expected_gtin", "SUPC", "Local Product Description", "Brand"] if c in non_conforming_df.columns]
-            st.dataframe(non_conforming_df[full_cols], use_container_width=True, hide_index=True)
+        st.download_button("Download as Excel (all original columns)", data=_nc_bytes, file_name="generic_non_conforming.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_non_conforming")
+        with st.expander("View all non-conforming records (all columns)"):
+            st.dataframe(non_conforming_df, use_container_width=True, hide_index=True)
     else:
         st.success("All Generic GTINs conform to the taxonomy (OSD prefix) mapping.")
 

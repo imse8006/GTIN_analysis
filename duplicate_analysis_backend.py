@@ -489,15 +489,25 @@ def run_generic_analysis(df, gtin_outer_col, output_dir: str):
         with open(os.path.join(output_dir, "generic_overview.json"), "w", encoding="utf-8") as f:
             json.dump({"total": 0, "legal_entities": [], "conforming_count": 0, "non_conforming_count": 0}, f, indent=2)
         return
+    
+    # Filter: keep ONLY Generic GTINs that are in the mapping (GENERIC_GTIN_TAXONOMY)
+    uniq_gtin = generic_df["gtin_outer_normalized"].dropna().unique()
+    gtin_14_map = {v: _gtin_to_14(v) for v in uniq_gtin}
+    generic_df["gtin_14"] = generic_df["gtin_outer_normalized"].map(gtin_14_map).fillna("")
+    # Keep only rows where gtin_14 is in GENERIC_GTIN_TAXONOMY keys
+    mapping_gtins = set(GENERIC_GTIN_TAXONOMY.keys())
+    generic_df = generic_df[generic_df["gtin_14"].isin(mapping_gtins)].copy()
+    
+    if len(generic_df) == 0:
+        with open(os.path.join(output_dir, "generic_overview.json"), "w", encoding="utf-8") as f:
+            json.dump({"total": 0, "legal_entities": [], "conforming_count": 0, "non_conforming_count": 0}, f, indent=2)
+        return
+    
     osd_col = next((c for c in df.columns if str(c).strip().upper() == "OSD CLASSIFICATION"), None)
     if osd_col is not None:
         generic_df["osd_prefix"] = generic_df[osd_col].fillna("").astype(str).str.strip().str.split("-").str[0].str.strip()
     else:
         generic_df["osd_prefix"] = ""
-    # Classify on unique then map (faster than apply on full column)
-    uniq_gtin = generic_df["gtin_outer_normalized"].dropna().unique()
-    gtin_14_map = {v: _gtin_to_14(v) for v in uniq_gtin}
-    generic_df["gtin_14"] = generic_df["gtin_outer_normalized"].map(gtin_14_map).fillna("")
     uniq_osd = generic_df["osd_prefix"].dropna().unique()
     expected_map = {v: EXPECTED_GTIN_BY_TAXONOMY.get(str(v).strip().upper()) if pd.notna(v) and str(v).strip() else None for v in uniq_osd}
     generic_df["expected_gtin"] = generic_df["osd_prefix"].map(expected_map)
@@ -509,11 +519,17 @@ def run_generic_analysis(df, gtin_outer_col, output_dir: str):
     by_ent["conforming_%"] = (by_ent["conforming"] / by_ent["total"] * 100).round(1)
     by_ent = by_ent.sort_values("non_conforming", ascending=False)
     by_ent.to_excel(os.path.join(output_dir, "generic_conformity_by_entity.xlsx"), index=False)
+    
+    # Non-conforming records: save with ALL original columns from input
     non_conforming_df = generic_df[~generic_df["conforming"]].copy()
     if len(non_conforming_df) > 0:
-        display_nc = non_conforming_df[["Legal Entity", "osd_prefix", "gtin_14", "expected_gtin"]].copy()
-        display_nc.columns = ["Legal Entity", "OSD prefix (taxonomy)", "Generic used", "Expected Generic"]
-        display_nc.to_excel(os.path.join(output_dir, "generic_non_conforming.xlsx"), index=False)
+        # Get all original columns (exclude only analysis columns we added)
+        analysis_cols = {"gtin_status_gen", "osd_prefix", "gtin_14", "expected_gtin", "conforming"}
+        original_cols = [c for c in df.columns if c not in analysis_cols]
+        # non_conforming_df already has all original columns from df (since it's a subset)
+        # Just select original columns and remove analysis columns
+        non_conforming_full = non_conforming_df[original_cols].copy()
+        non_conforming_full.to_excel(os.path.join(output_dir, "generic_non_conforming.xlsx"), index=False)
     sample_cols = [c for c in ["Legal Entity", "osd_prefix", "gtin_14", "expected_gtin", "conforming", "SUPC", "Local Product Description"] if c in generic_df.columns]
     if sample_cols:
         generic_df[sample_cols].to_excel(os.path.join(output_dir, "generic_all_records_with_conformity.xlsx"), index=False)
