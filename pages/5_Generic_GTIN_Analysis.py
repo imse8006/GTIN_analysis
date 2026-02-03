@@ -261,10 +261,33 @@ def main():
 
     st.markdown('<div class="section-header">Non-conforming records</div>', unsafe_allow_html=True)
     if len(non_conforming_df) > 0:
-        # Display sample columns for preview
-        preview_cols = [c for c in ["Legal Entity", "SUPC", "Local Product Description", "Brand", "OSD Classification", gtin_outer_col] if c in non_conforming_df.columns]
-        if preview_cols:
-            st.dataframe(non_conforming_df[preview_cols].head(20), use_container_width=True, hide_index=True)
+        # Display comprehensive columns for preview (matching Excel export)
+        preview_cols = [
+            "OSD Classification",
+            "Legal Entity",
+            "SUPC",
+            "Local Product Description",
+            "Proprietary Product",
+            "Brand",
+            "Global Product Case Pack",
+            "Case Pack",
+            "Case Size",
+            "Case UOM",
+            "Generic GTIN",
+            gtin_outer_col,
+            "GTIN-Inner",
+            "gtin_inner_normalized",
+            "Vendor Product",
+            "Default Vendor",
+            "osd_prefix",
+            "gtin_14",
+            "expected_gtin",
+            "conforming"
+        ]
+        # Filter to only columns that exist in the dataframe
+        available_preview_cols = [c for c in preview_cols if c in non_conforming_df.columns]
+        if available_preview_cols:
+            st.dataframe(non_conforming_df[available_preview_cols].head(20), use_container_width=True, hide_index=True)
             st.caption(f"Showing first 20 rows. Total: {len(non_conforming_df):,} non-conforming records.")
         else:
             st.dataframe(non_conforming_df.head(20), use_container_width=True, hide_index=True)
@@ -308,15 +331,39 @@ def main():
         st.dataframe(pd.DataFrame(ref), use_container_width=True, hide_index=True)
 
     st.markdown('<div class="section-header">Sample Generic records (with conformity)</div>', unsafe_allow_html=True)
-    sample_cols = [c for c in ["Legal Entity", "osd_prefix", "gtin_14", "expected_gtin", "conforming", "SUPC", "Local Product Description"] if c in generic_df.columns]
-    sample_df = generic_df[sample_cols].head(50) if sample_cols else generic_df.head(50)
+    # Display comprehensive columns for sample records
+    sample_cols = [
+        "OSD Classification",
+        "Legal Entity",
+        "SUPC",
+        "Local Product Description",
+        "Proprietary Product",
+        "Brand",
+        "Global Product Case Pack",
+        "Case Pack",
+        "Case Size",
+        "Case UOM",
+        "Generic GTIN",
+        gtin_outer_col,
+        "GTIN-Inner",
+        "gtin_inner_normalized",
+        "Vendor Product",
+        "Default Vendor",
+        "osd_prefix",
+        "gtin_14",
+        "expected_gtin",
+        "conforming"
+    ]
+    # Filter to only columns that exist in the dataframe
+    available_sample_cols = [c for c in sample_cols if c in generic_df.columns]
+    sample_df = generic_df[available_sample_cols].head(50) if available_sample_cols else generic_df.head(50)
     st.dataframe(sample_df, use_container_width=True, hide_index=True)
     _all_path = os.path.join(output_dir, "generic_all_records_with_conformity.xlsx")
     if set(selected_entities) == set(legal_entities) and os.path.isfile(_all_path):
         with open(_all_path, "rb") as _f:
             _all_bytes = _f.read()
     else:
-        _all_bytes = to_excel_bytes(generic_df[sample_cols] if sample_cols else generic_df)
+        _all_bytes = to_excel_bytes(generic_df[available_sample_cols] if available_sample_cols else generic_df)
     st.download_button("Download as Excel (all records)", data=_all_bytes, file_name="generic_all_records_with_conformity.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_sample")
 
 
