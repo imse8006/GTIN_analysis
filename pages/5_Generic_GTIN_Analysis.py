@@ -189,26 +189,38 @@ def main():
     source_file_resolved = None
     
     # Normalize output_dir to absolute path first
-    output_dir_path = Path(output_dir).resolve()
+    # Handle both relative and absolute paths
+    if os.path.isabs(output_dir):
+        output_dir_path = Path(output_dir)
+    else:
+        # If relative, resolve from current working directory or script directory
+        output_dir_path = Path(output_dir).resolve()
+        if not output_dir_path.exists():
+            # Try relative to script directory
+            output_dir_path = (Path(__file__).parent.parent / output_dir).resolve()
+    
     # Get the project root (parent of outputs/)
     project_root = output_dir_path.parent.parent
     
-    # Debug: print paths to understand the issue (can be removed later)
-    # st.write(f"Debug: output_dir={output_dir}, output_dir_path={output_dir_path}, project_root={project_root}")
+    # Script directory (parent of pages/) - this is where files are typically stored
+    script_dir = Path(__file__).parent.parent
     
-    # Try absolute path first
+    # Try multiple locations in order of likelihood
+    source_file_resolved = None
+    
+    # 1. Try absolute path first
     if os.path.isabs(source_file) and os.path.isfile(source_file):
         source_file_resolved = source_file
-    # Try relative to project root (most common case - file should be at project root)
+    # 2. Try relative to project root (most common case)
     elif (project_root / source_file).is_file():
         source_file_resolved = str((project_root / source_file).resolve())
-    # Try script directory (parent of pages/) - this is where the file actually is
-    elif (Path(__file__).parent.parent / source_file).is_file():
-        source_file_resolved = str((Path(__file__).parent.parent / source_file).resolve())
-    # Try current working directory
+    # 3. Try script directory (parent of pages/) - where files are stored
+    elif (script_dir / source_file).is_file():
+        source_file_resolved = str((script_dir / source_file).resolve())
+    # 4. Try current working directory
     elif Path(source_file).is_file():
         source_file_resolved = str(Path(source_file).resolve())
-    # Try relative to output_dir parent
+    # 5. Try relative to output_dir parent
     elif (output_dir_path.parent / source_file).is_file():
         source_file_resolved = str((output_dir_path.parent / source_file).resolve())
     
