@@ -863,12 +863,32 @@ def load_output_results(output_dir: str, selected_entities: list = None):
         "full_df": pd.DataFrame(),
     }
     placeholder_by = _filter(_read("placeholder_by_entity.xlsx"))
+    # Try to load placeholder records from quality_full_classified.xlsx to get gtin_list
+    placeholder_gtin_list = []
+    placeholder_full_df = pd.DataFrame()
+    quality_full = _read("quality_full_classified.xlsx")
+    if len(quality_full) > 0 and "gtin_outer_normalized" in quality_full.columns:
+        quality_filtered = quality_full
+        if entities and "Legal Entity" in quality_full.columns:
+            quality_filtered = quality_full[quality_full["Legal Entity"].isin(entities)].copy()
+        if "gtin_status" in quality_filtered.columns:
+            placeholder_full_df = quality_filtered[quality_filtered["gtin_status"].isin(["PLACEHOLDER", "EXPLICIT_BLOCKED"])].copy()
+        else:
+            # Fallback: filter by GTIN value (all 9s)
+            placeholder_mask = (
+                (quality_filtered["gtin_outer_normalized"].astype(str).str.match(r"^9+$")) |
+                (quality_filtered["gtin_outer_normalized"] == "99999999999999")
+            )
+            placeholder_full_df = quality_filtered[placeholder_mask].copy()
+        if len(placeholder_full_df) > 0:
+            placeholder_gtin_list = placeholder_full_df["gtin_outer_normalized"].dropna().unique().tolist()
+    
     placeholder_results = {
         "total": placeholder_by["Total Records"].astype(int).sum() if len(placeholder_by) > 0 else 0,
         "unique_gtins": placeholder_by["Unique Placeholder GTINs"].astype(int).sum() if len(placeholder_by) > 0 and "Unique Placeholder GTINs" in placeholder_by.columns else 0,
         "by_entity": placeholder_by,
-        "gtin_list": [],
-        "full_df": pd.DataFrame(),
+        "gtin_list": placeholder_gtin_list,
+        "full_df": placeholder_full_df,
     }
     suspect_by = _filter(_read("suspect_by_entity.xlsx"))
     # Try to load suspect records from suspect_records.xlsx (saved by batch), or fallback to quality_full_classified.xlsx

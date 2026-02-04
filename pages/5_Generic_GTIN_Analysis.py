@@ -316,7 +316,7 @@ def main():
         original_cols = [c for c in non_conforming_df.columns if c not in analysis_cols]
         non_conforming_export = non_conforming_df[original_cols].copy()
         _nc_bytes = to_excel_bytes(non_conforming_export)
-        st.download_button("Download as Excel (all original columns)", data=_nc_bytes, file_name="generic_non_conforming.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_non_conforming")
+        st.download_button("Download as Excel", data=_nc_bytes, file_name="generic_non_conforming.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_non_conforming")
     else:
         st.success("All Generic GTINs conform to the taxonomy (OSD prefix) mapping.")
 

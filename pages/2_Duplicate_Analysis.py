@@ -11,7 +11,7 @@ from collections import Counter
 import sys
 from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
-from export_utils import to_excel_bytes
+from export_utils import to_excel_bytes, to_excel_bytes_cross_duplicates
 from auth_utils import render_login_form
 from duplicate_analysis_backend import (
     list_output_dates,
@@ -825,10 +825,10 @@ def main():
             st.metric("🔀 Cross Duplicates", "N/A", "Inner column not found")
     
     with col4:
-        duplicate_count = generic_results.get('duplicate_count', 0)
-        unique_duplicated = generic_results.get('unique_duplicated_gtins', 0)
-        st.metric("⚠️ Generic GTINs", f"{duplicate_count:,}", 
-                 f"{unique_duplicated:,} duplicated" if duplicate_count > 0 else f"{generic_results.get('unique_gtins', 0):,} unique")
+        generic_total = generic_results.get('total', 0)
+        unique_gtins = generic_results.get('unique_gtins', 0)
+        st.metric("⚠️ Generic GTINs", f"{generic_total:,}", 
+                 f"{unique_gtins:,} unique")
     
     with col5:
         st.metric("🚫 Placeholder GTINs", f"{placeholder_results['total']:,}",
@@ -848,9 +848,9 @@ def main():
     
     # Tabs for different analysis types
     tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
-        "Cross Duplicates", 
         "GTIN Outer Duplicates", 
         "GTIN Inner Duplicates",
+        "Cross Duplicates",
         "Generic GTINs",
         "Placeholder GTINs",
         "Suspect GTINs",
@@ -859,67 +859,8 @@ def main():
         "Inner = Outer (non-Generic)"
     ])
     
-    # Tab 1: Cross Duplicates (moved to first position as it's most interesting)
+    # Tab 1: GTIN Outer Duplicates
     with tab1:
-        st.markdown("#### 🔀 Cross Duplicates (GTIN appears in both Outer and Inner)")
-        
-        if duplicate_results["cross"]:
-            cross_df = duplicate_results["cross"]["cross_df"]
-            
-            if len(cross_df) > 0:
-                st.markdown(f"**Found {duplicate_results['cross']['unique_cross_gtins']} GTINs that appear in both Outer and Inner columns**")
-                
-                # Analysis by Legal Entity
-                st.markdown("##### 📊 By Legal Entity")
-                cross_by_entity = cross_df.groupby("Legal Entity").agg({
-                    gtin_outer_col: "count" if gtin_outer_col else "size",
-                    "gtin_outer_normalized": "nunique"
-                }).reset_index()
-                cross_by_entity.columns = ["Legal Entity", "Total Records", "Unique Cross GTINs"]
-                cross_by_entity = cross_by_entity.sort_values("Total Records", ascending=False)
-                st.dataframe(cross_by_entity, use_container_width=True, hide_index=True)
-                
-                # Summary by GTIN
-                st.markdown("##### 📋 GTIN Summary")
-                cross_summary = []
-                for gtin in duplicate_results["cross"]["gtin_list"][:100]:  # Limit to first 100
-                    gtin_df = cross_df[(cross_df["gtin_outer_normalized"] == gtin) | 
-                                      (cross_df["gtin_inner_normalized"] == gtin)]
-                    outer_count = len(gtin_df[gtin_df["gtin_outer_normalized"] == gtin])
-                    inner_count = len(gtin_df[gtin_df["gtin_inner_normalized"] == gtin])
-                    entities = gtin_df["Legal Entity"].unique().tolist()
-                    cross_summary.append({
-                        "GTIN": gtin,
-                        "As Outer": outer_count,
-                        "As Inner": inner_count,
-                        "Total Records": outer_count + inner_count,
-                        "Legal Entities": ", ".join(sorted(entities))
-                    })
-                
-                if cross_summary:
-                    cross_summary_df = pd.DataFrame(cross_summary)
-                    st.dataframe(cross_summary_df, use_container_width=True, hide_index=True)
-                    st.download_button("Download as Excel", data=to_excel_bytes(cross_summary_df), file_name="cross_duplicates_summary.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_cross_summary")
-                
-                # Detailed view
-                with st.expander("View All Cross Duplicate Records"):
-                    display_cols = ["Legal Entity"]
-                    if gtin_outer_col:
-                        display_cols.append(gtin_outer_col)
-                    if gtin_inner_col:
-                        display_cols.append(gtin_inner_col)
-                    if "SUPC" in cross_df.columns:
-                        display_cols.append("SUPC")
-                    
-                    available_cols = [col for col in display_cols if col in cross_df.columns]
-                    st.dataframe(cross_df[available_cols], use_container_width=True, hide_index=True)
-            else:
-                st.success("✅ No cross duplicates found!")
-        else:
-            st.info("ℹ️ GTIN Inner column not found. Cross duplicate analysis requires both Outer and Inner columns.")
-    
-    # Tab 2: GTIN Outer Duplicates
-    with tab2:
         st.markdown("#### 📦 GTIN Outer Duplicates")
         outer_df = duplicate_results["outer"]["duplicate_df"]
         
@@ -960,8 +901,8 @@ def main():
         else:
             st.success("✅ No duplicates found in GTIN Outer!")
     
-    # Tab 3: GTIN Inner Duplicates
-    with tab3:
+    # Tab 2: GTIN Inner Duplicates
+    with tab2:
         st.markdown("#### 📦 GTIN Inner Duplicates")
         
         if duplicate_results["inner"]:
@@ -1005,6 +946,78 @@ def main():
                 st.success("✅ No duplicates found in GTIN Inner!")
         else:
             st.info("ℹ️ GTIN Inner column not found in the data file.")
+    
+    # Tab 3: Cross Duplicates (moved after Inner Duplicates)
+    with tab3:
+        st.markdown("#### 🔀 Cross Duplicates (GTIN appears in both Outer and Inner)")
+        st.markdown("""
+        <div style="background-color: #1e293b; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #60a5fa; margin-bottom: 1rem;">
+            <strong style="color: #60a5fa;">ℹ️ Différence avec "Inner = Outer (non-Generic)" :</strong><br>
+            <span style="color: #cbd5e1;">
+            <strong>Cross Duplicates</strong> identifie les GTINs qui apparaissent <strong>à la fois</strong> dans la colonne Outer <strong>ET</strong> dans la colonne Inner, 
+            mais pas nécessairement sur la même ligne. Un GTIN peut être Outer sur une ligne et Inner sur une autre ligne (même entité ou entité différente).<br><br>
+            <strong>Inner = Outer (non-Generic)</strong> identifie uniquement les cas où <strong>sur la même ligne</strong>, le GTIN Inner est <strong>égal</strong> au GTIN Outer 
+            (et où les deux ne sont pas des Generic GTINs).
+            </span>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if duplicate_results["cross"]:
+            cross_df = duplicate_results["cross"]["cross_df"]
+            
+            if len(cross_df) > 0:
+                st.markdown(f"**Found {duplicate_results['cross']['unique_cross_gtins']} GTINs that appear in both Outer and Inner columns**")
+                
+                # Analysis by Legal Entity
+                st.markdown("##### 📊 By Legal Entity")
+                cross_by_entity = cross_df.groupby("Legal Entity").agg({
+                    gtin_outer_col: "count" if gtin_outer_col else "size",
+                    "gtin_outer_normalized": "nunique"
+                }).reset_index()
+                cross_by_entity.columns = ["Legal Entity", "Total Records", "Unique Cross GTINs"]
+                cross_by_entity = cross_by_entity.sort_values("Total Records", ascending=False)
+                st.dataframe(cross_by_entity, use_container_width=True, hide_index=True)
+                
+                # Summary by GTIN
+                st.markdown("##### 📋 GTIN Summary")
+                cross_summary = []
+                for gtin in duplicate_results["cross"]["gtin_list"][:100]:  # Limit to first 100
+                    gtin_df = cross_df[(cross_df["gtin_outer_normalized"] == gtin) | 
+                                      (cross_df["gtin_inner_normalized"] == gtin)]
+                    outer_count = len(gtin_df[gtin_df["gtin_outer_normalized"] == gtin])
+                    inner_count = len(gtin_df[gtin_df["gtin_inner_normalized"] == gtin])
+                    entities = gtin_df["Legal Entity"].unique().tolist()
+                    cross_summary.append({
+                        "GTIN": gtin,
+                        "As Outer": outer_count,
+                        "As Inner": inner_count,
+                        "Total Records": outer_count + inner_count,
+                        "Legal Entities": ", ".join(sorted(entities))
+                    })
+                
+                if cross_summary:
+                    cross_summary_df = pd.DataFrame(cross_summary)
+                    st.dataframe(cross_summary_df, use_container_width=True, hide_index=True)
+                
+                # Download all records with green formatting
+                st.download_button("Download as Excel", data=to_excel_bytes_cross_duplicates(cross_df, gtin_outer_col, gtin_inner_col), file_name="cross_duplicates_all.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", key="dl_cross_all")
+                
+                # Detailed view
+                with st.expander("View All Cross Duplicate Records"):
+                    display_cols = ["Legal Entity"]
+                    if gtin_outer_col:
+                        display_cols.append(gtin_outer_col)
+                    if gtin_inner_col:
+                        display_cols.append(gtin_inner_col)
+                    if "SUPC" in cross_df.columns:
+                        display_cols.append("SUPC")
+                    
+                    available_cols = [col for col in display_cols if col in cross_df.columns]
+                    st.dataframe(cross_df[available_cols], use_container_width=True, hide_index=True)
+            else:
+                st.success("✅ No cross duplicates found!")
+        else:
+            st.info("ℹ️ GTIN Inner column not found. Cross duplicate analysis requires both Outer and Inner columns.")
     
     # Tab 4: Generic GTINs Duplicates
     with tab4:
@@ -1107,21 +1120,35 @@ def main():
             
             # List of Placeholder GTINs
             st.markdown("##### 📋 Placeholder GTINs List")
-            placeholder_list_df = pd.DataFrame({"Placeholder GTIN": placeholder_results["gtin_list"]})
-            st.dataframe(placeholder_list_df, use_container_width=True, hide_index=True)
+            # Extract GTINs from gtin_list or from full_df if list is empty
+            if placeholder_results.get("gtin_list") and len(placeholder_results["gtin_list"]) > 0:
+                placeholder_gtins = placeholder_results["gtin_list"]
+            elif len(placeholder_results["full_df"]) > 0 and "gtin_outer_normalized" in placeholder_results["full_df"].columns:
+                placeholder_gtins = placeholder_results["full_df"]["gtin_outer_normalized"].dropna().unique().tolist()
+            else:
+                placeholder_gtins = []
+            
+            if len(placeholder_gtins) > 0:
+                placeholder_list_df = pd.DataFrame({"Placeholder GTIN": placeholder_gtins})
+                st.dataframe(placeholder_list_df, use_container_width=True, hide_index=True)
+            else:
+                st.info("ℹ️ Placeholder GTIN list not available. Please regenerate the analysis batch to include placeholder details.")
             
             # Detailed view
             with st.expander("View All Placeholder GTIN Records"):
-                display_cols = ["Legal Entity", gtin_outer_col, "gtin_outer_normalized"]
-                if generic_gtin_col and generic_gtin_col in placeholder_results["full_df"].columns:
-                    display_cols.append(generic_gtin_col)
-                if "SUPC" in placeholder_results["full_df"].columns:
-                    display_cols.append("SUPC")
-                if "Local Product Description" in placeholder_results["full_df"].columns:
-                    display_cols.append("Local Product Description")
-                
-                available_cols = [col for col in display_cols if col in placeholder_results["full_df"].columns]
-                st.dataframe(placeholder_results["full_df"][available_cols], use_container_width=True, hide_index=True)
+                if len(placeholder_results["full_df"]) > 0:
+                    display_cols = ["Legal Entity", gtin_outer_col, "gtin_outer_normalized"]
+                    if generic_gtin_col and generic_gtin_col in placeholder_results["full_df"].columns:
+                        display_cols.append(generic_gtin_col)
+                    if "SUPC" in placeholder_results["full_df"].columns:
+                        display_cols.append("SUPC")
+                    if "Local Product Description" in placeholder_results["full_df"].columns:
+                        display_cols.append("Local Product Description")
+                    
+                    available_cols = [col for col in display_cols if col in placeholder_results["full_df"].columns]
+                    st.dataframe(placeholder_results["full_df"][available_cols], use_container_width=True, hide_index=True)
+                else:
+                    st.info("ℹ️ Detailed placeholder records not available. Please regenerate the analysis batch to include placeholder details.")
         else:
             st.success("✅ No Placeholder GTINs found!")
     

@@ -102,3 +102,64 @@ def to_csv_bytes(df: pd.DataFrame) -> bytes:
     if df is None or df.empty:
         return b""
     return df.to_csv(index=False).encode("utf-8-sig")
+
+
+def to_excel_bytes_cross_duplicates(cross_df: pd.DataFrame, gtin_outer_col: str = None, gtin_inner_col: str = None) -> bytes:
+    """Export Cross Duplicates DataFrame with green fill for all rows (skipped for large sheets)."""
+    if cross_df is None or cross_df.empty:
+        buf = io.BytesIO()
+        pd.DataFrame().to_excel(buf, index=False, engine="openpyxl")
+        buf.seek(0)
+        return buf.getvalue()
+    
+    # Prepare display columns
+    display_cols = ["Legal Entity"]
+    if gtin_outer_col and gtin_outer_col in cross_df.columns:
+        display_cols.append(gtin_outer_col)
+    if gtin_inner_col and gtin_inner_col in cross_df.columns:
+        display_cols.append(gtin_inner_col)
+    if "SUPC" in cross_df.columns:
+        display_cols.append("SUPC")
+    if "Local Product Description" in cross_df.columns:
+        display_cols.append("Local Product Description")
+    
+    # Add normalized columns if they exist
+    if "gtin_outer_normalized" in cross_df.columns:
+        display_cols.append("gtin_outer_normalized")
+    if "gtin_inner_normalized" in cross_df.columns:
+        display_cols.append("gtin_inner_normalized")
+    
+    # Filter to available columns
+    available_cols = [col for col in display_cols if col in cross_df.columns]
+    export_df = cross_df[available_cols].copy()
+    
+    # Sort by GTIN for better grouping - use the cross GTIN (appears in both Outer and Inner)
+    sort_cols = []
+    if "gtin_outer_normalized" in export_df.columns:
+        sort_cols.append("gtin_outer_normalized")
+    if "Legal Entity" in export_df.columns:
+        sort_cols.append("Legal Entity")
+    if sort_cols:
+        export_df = export_df.sort_values(by=sort_cols).reset_index(drop=True)
+    
+    buf = io.BytesIO()
+    export_df.to_excel(buf, index=False, engine="openpyxl")
+    buf.seek(0)
+    
+    # Apply green fill if not too large
+    if len(export_df) > _INNER_OUTER_STYLE_ROW_LIMIT:
+        return buf.getvalue()
+    
+    wb = load_workbook(buf)
+    ws = wb.active
+    green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+    
+    # Apply green fill to all rows (all are Cross Duplicates)
+    for row_idx in range(2, len(export_df) + 2):  # Start at row 2 (row 1 is header)
+        for col_idx in range(1, ws.max_column + 1):
+            ws.cell(row=row_idx, column=col_idx).fill = green_fill
+    
+    out_buf = io.BytesIO()
+    wb.save(out_buf)
+    out_buf.seek(0)
+    return out_buf.getvalue()
