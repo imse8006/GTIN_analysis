@@ -952,12 +952,12 @@ def main():
         st.markdown("#### 🔀 Cross Duplicates (GTIN appears in both Outer and Inner)")
         st.markdown("""
         <div style="background-color: #1e293b; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #60a5fa; margin-bottom: 1rem;">
-            <strong style="color: #60a5fa;">ℹ️ Différence avec "Inner = Outer (non-Generic)" :</strong><br>
+            <strong style="color: #60a5fa;">ℹ️ Difference with "Inner = Outer (non-Generic)":</strong><br>
             <span style="color: #cbd5e1;">
-            <strong>Cross Duplicates</strong> identifie les GTINs qui apparaissent <strong>à la fois</strong> dans la colonne Outer <strong>ET</strong> dans la colonne Inner, 
-            mais pas nécessairement sur la même ligne. Un GTIN peut être Outer sur une ligne et Inner sur une autre ligne (même entité ou entité différente).<br><br>
-            <strong>Inner = Outer (non-Generic)</strong> identifie uniquement les cas où <strong>sur la même ligne</strong>, le GTIN Inner est <strong>égal</strong> au GTIN Outer 
-            (et où les deux ne sont pas des Generic GTINs).
+            <strong>Cross Duplicates</strong> identifies GTINs that appear <strong>both</strong> in the Outer column <strong>AND</strong> in the Inner column, 
+            but not necessarily on the same row. A GTIN can be Outer on one row and Inner on another row (same entity or different entity).<br><br>
+            <strong>Inner = Outer (non-Generic)</strong> identifies only cases where <strong>on the same row</strong>, the Inner GTIN is <strong>equal</strong> to the Outer GTIN 
+            (and where both are not Generic GTINs).
             </span>
         </div>
         """, unsafe_allow_html=True)
@@ -1157,21 +1157,24 @@ def main():
         st.markdown("#### 🔍 Suspect GTINs Analysis")
         
         st.markdown("""
-        **Detection Criteria:**
-        
-        A GTIN is marked as **Suspect** if it meets any of the following conditions:
-        
-        1. **Excessive digit repetition** : A single digit appears ≥ 60% of the GTIN length
-           - Example: `11111111111111` (digit 1 appears 14 times out of 14)
-           - Example: `18414900000000` (digit 0 appears 8 times out of 14)
-        
-        2. **Too many trailing zeros** : 
-           - At least 6 consecutive zeros at the end, OR
-           - Half the GTIN length (or more) in trailing zeros
-           - Example: `18414900000000` (8 zeros at the end out of 14 digits)
-        
-        **Note:** Generic GTINs are excluded from this analysis.
-        """)
+        <div style="background-color: #1e293b; padding: 1rem; border-radius: 0.5rem; border-left: 4px solid #60a5fa; margin-bottom: 1rem;">
+            <strong style="color: #60a5fa;">🔍 Detection Criteria:</strong><br><br>
+            <span style="color: #cbd5e1;">
+            A GTIN is marked as <strong>Suspect</strong> if it meets any of the following conditions:<br><br>
+            
+            <strong>1. Excessive digit repetition:</strong> A single digit appears ≥ 60% of the GTIN length<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;• Example: <code style="background-color: #334155; padding: 2px 4px; border-radius: 3px;">11111111111111</code> (digit 1 appears 14 times out of 14)<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;• Example: <code style="background-color: #334155; padding: 2px 4px; border-radius: 3px;">18414900000000</code> (digit 0 appears 8 times out of 14)<br><br>
+            
+            <strong>2. Too many trailing zeros:</strong><br>
+            &nbsp;&nbsp;&nbsp;&nbsp;• At least 6 consecutive zeros at the end, OR<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;• Half the GTIN length (or more) in trailing zeros<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;• Example: <code style="background-color: #334155; padding: 2px 4px; border-radius: 3px;">18414900000000</code> (8 zeros at the end out of 14 digits)<br><br>
+            
+            <strong>Note:</strong> Generic GTINs are excluded from this analysis.
+            </span>
+        </div>
+        """, unsafe_allow_html=True)
         
         if suspect_results["total"] > 0:
             st.markdown(f"**Found {suspect_results['total']:,} records with {suspect_results['unique_gtins']:,} unique Suspect GTINs**")

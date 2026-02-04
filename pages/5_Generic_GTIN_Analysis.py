@@ -185,23 +185,64 @@ def main():
         return
     
     # Resolve source file path (could be relative or absolute)
-    if not os.path.isabs(source_file):
-        source_file = os.path.join(os.path.dirname(output_dir), "..", source_file)
-        source_file = os.path.normpath(source_file)
+    # Try multiple possible locations
+    source_file_resolved = None
+    if os.path.isabs(source_file) and os.path.isfile(source_file):
+        source_file_resolved = source_file
+    else:
+        # Try relative to project root (outputs/../filename)
+        project_root = Path(output_dir).parent.parent
+        candidate1 = project_root / source_file
+        if candidate1.is_file():
+            source_file_resolved = str(candidate1.resolve())
+        else:
+            # Try in current working directory (where Streamlit runs)
+            candidate2 = Path.cwd() / source_file
+            if candidate2.is_file():
+                source_file_resolved = str(candidate2.resolve())
+            else:
+                # Try relative to script directory
+                script_dir = Path(__file__).parent.parent
+                candidate3 = script_dir / source_file
+                if candidate3.is_file():
+                    source_file_resolved = str(candidate3.resolve())
+                else:
+                    # Try relative to output_dir parent
+                    candidate4 = Path(output_dir).parent / source_file
+                    if candidate4.is_file():
+                        source_file_resolved = str(candidate4.resolve())
     
-    if not os.path.isfile(source_file):
-        st.error(f"Source file not found: {source_file}")
+    if not source_file_resolved or not os.path.isfile(source_file_resolved):
+        st.warning(f"⚠️ Source file not found: {source_file}. The analysis will use pre-computed results only. To enable full analysis, ensure the source file is available.")
+        df_source = None
+        gtin_outer_col = None
+    else:
+        source_file = source_file_resolved
+        st.markdown('<h1 class="main-header">Generic GTIN Analysis</h1>', unsafe_allow_html=True)
+        st.markdown(f'<div style="text-align: center; color: #cbd5e1; margin-bottom: 1rem;">Source: <strong style="color: #94a3b8;">{os.path.basename(source_file)}</strong></div>', unsafe_allow_html=True)
+
+        with st.spinner("Loading source data…"):
+            df_source, gtin_outer_col, _ = _cached_load_source_file(source_file)
+            if df_source is None:
+                st.error("Failed to load source file.")
+                df_source = None
+                gtin_outer_col = None
+    
+    # If source file not available, show header and use pre-computed results only
+    if df_source is None:
+        st.markdown('<h1 class="main-header">Generic GTIN Analysis</h1>', unsafe_allow_html=True)
+        st.info("ℹ️ Using pre-computed results only. Source file not available for detailed analysis.")
+        # Load pre-computed results and show them
+        generic_data = _cached_load_generic_results(output_dir)
+        if generic_data and generic_data.get("overview"):
+            overview = generic_data["overview"]
+            st.markdown(f"**Total Generic GTINs:** {overview.get('total', 0):,}")
+            st.markdown(f"**Conforming:** {overview.get('conforming_count', 0):,}")
+            st.markdown(f"**Non-conforming:** {overview.get('non_conforming_count', 0):,}")
+            if len(generic_data.get("by_entity_df", pd.DataFrame())) > 0:
+                st.dataframe(generic_data["by_entity_df"], use_container_width=True, hide_index=True)
         return
-
-    st.markdown('<h1 class="main-header">Generic GTIN Analysis</h1>', unsafe_allow_html=True)
-    st.markdown(f'<div style="text-align: center; color: #cbd5e1; margin-bottom: 1rem;">Source: <strong style="color: #94a3b8;">{os.path.basename(source_file)}</strong></div>', unsafe_allow_html=True)
-
-    with st.spinner("Loading source data…"):
-        df_source, gtin_outer_col, _ = _cached_load_source_file(source_file)
-        if df_source is None:
-            st.error("Failed to load source file.")
-            return
-
+    
     # Step 1: Filter on Generic GTINs with mapping FIRST (10000000000009, 30000000000009, 40000000000009, 70000000000009)
     # Normalize GTIN-Outer to 14 digits
     gtin_outer_normalized = df_source[gtin_outer_col].fillna("").astype(str).str.strip()
