@@ -1163,13 +1163,17 @@ def main():
             A GTIN is marked as <strong>Suspect</strong> if it meets any of the following conditions:<br><br>
             
             <strong>1. Excessive digit repetition:</strong> A single digit appears ≥ 60% of the GTIN length<br>
-            &nbsp;&nbsp;&nbsp;&nbsp;• Example: <code style="background-color: #334155; padding: 2px 4px; border-radius: 3px;">11111111111111</code> (digit 1 appears 14 times out of 14)<br>
-            &nbsp;&nbsp;&nbsp;&nbsp;• Example: <code style="background-color: #334155; padding: 2px 4px; border-radius: 3px;">18414900000000</code> (digit 0 appears 8 times out of 14)<br><br>
+            <div style="margin-left: 20px; margin-top: 4px;">
+            • Example: <code style="background-color: #334155; padding: 2px 4px; border-radius: 3px;">11111111111111</code> (digit 1 appears 14 times out of 14)<br>
+            • Example: <code style="background-color: #334155; padding: 2px 4px; border-radius: 3px;">18414900000000</code> (digit 0 appears 8 times out of 14)
+            </div><br>
             
             <strong>2. Too many trailing zeros:</strong><br>
-            &nbsp;&nbsp;&nbsp;&nbsp;• At least 6 consecutive zeros at the end, OR<br>
-            &nbsp;&nbsp;&nbsp;&nbsp;• Half the GTIN length (or more) in trailing zeros<br>
-            &nbsp;&nbsp;&nbsp;&nbsp;• Example: <code style="background-color: #334155; padding: 2px 4px; border-radius: 3px;">18414900000000</code> (8 zeros at the end out of 14 digits)<br><br>
+            <div style="margin-left: 20px; margin-top: 4px;">
+            • At least 6 consecutive zeros at the end, OR<br>
+            • Half the GTIN length (or more) in trailing zeros<br>
+            • Example: <code style="background-color: #334155; padding: 2px 4px; border-radius: 3px;">18414900000000</code> (8 zeros at the end out of 14 digits)
+            </div><br>
             
             <strong>Note:</strong> Generic GTINs are excluded from this analysis.
             </span>
