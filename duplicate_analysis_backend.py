@@ -4,6 +4,7 @@ No Streamlit dependency. Used by run_duplicate_analysis_batch.py and by Streamli
 """
 import json
 import os
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -608,7 +609,14 @@ def run_full_analysis(input_excel_path: str, output_dir: str = None, extract_dat
     if extract_date:
         out_date = extract_date
     else:
-        out_date = datetime.now().strftime("%Y-%m-%d")
+        # Try to extract date from filename (pattern: all-products-prod-YYYY-MM-DD_...)
+        filename = Path(input_excel_path).name
+        date_match = re.search(r'(\d{4}-\d{2}-\d{2})', filename)
+        if date_match:
+            out_date = date_match.group(1)
+        else:
+            # Fallback to today if no date found in filename
+            out_date = datetime.now().strftime("%Y-%m-%d")
     if output_dir is None:
         output_dir = os.path.join(OUTPUTS_BASE, out_date)
     Path(output_dir).mkdir(parents=True, exist_ok=True)
