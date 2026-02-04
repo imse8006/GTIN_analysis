@@ -19,8 +19,8 @@ pages = [
     st.Page("pages/0_Documentation.py", title="Documentation", icon="📚"),
     st.Page("pages/1_GTIN_Quality_Dashboard.py", title="GTIN Quality Dashboard", icon="📊"),
     st.Page("pages/2_Duplicate_Analysis.py", title="Duplicate Analysis", icon="🔍"),
-    st.Page("pages/4_Tracker.py", title="Tracker", icon="📈"),
     st.Page("pages/5_Generic_GTIN_Analysis.py", title="Generic GTIN Analysis", icon="🔢"),
+    st.Page("pages/4_Tracker.py", title="Tracker", icon="📈"),
 ]
 
 # Create navigation

@@ -185,32 +185,32 @@ def main():
         return
     
     # Resolve source file path (could be relative or absolute)
-    # Try multiple possible locations
+    # Try multiple possible locations - same logic as other pages
     source_file_resolved = None
+    
+    # Normalize output_dir to absolute path first
+    output_dir_path = Path(output_dir).resolve()
+    # Get the project root (parent of outputs/)
+    project_root = output_dir_path.parent.parent
+    
+    # Debug: print paths to understand the issue (can be removed later)
+    # st.write(f"Debug: output_dir={output_dir}, output_dir_path={output_dir_path}, project_root={project_root}")
+    
+    # Try absolute path first
     if os.path.isabs(source_file) and os.path.isfile(source_file):
         source_file_resolved = source_file
-    else:
-        # Try relative to project root (outputs/../filename)
-        project_root = Path(output_dir).parent.parent
-        candidate1 = project_root / source_file
-        if candidate1.is_file():
-            source_file_resolved = str(candidate1.resolve())
-        else:
-            # Try in current working directory (where Streamlit runs)
-            candidate2 = Path.cwd() / source_file
-            if candidate2.is_file():
-                source_file_resolved = str(candidate2.resolve())
-            else:
-                # Try relative to script directory
-                script_dir = Path(__file__).parent.parent
-                candidate3 = script_dir / source_file
-                if candidate3.is_file():
-                    source_file_resolved = str(candidate3.resolve())
-                else:
-                    # Try relative to output_dir parent
-                    candidate4 = Path(output_dir).parent / source_file
-                    if candidate4.is_file():
-                        source_file_resolved = str(candidate4.resolve())
+    # Try relative to project root (most common case - file should be at project root)
+    elif (project_root / source_file).is_file():
+        source_file_resolved = str((project_root / source_file).resolve())
+    # Try script directory (parent of pages/) - this is where the file actually is
+    elif (Path(__file__).parent.parent / source_file).is_file():
+        source_file_resolved = str((Path(__file__).parent.parent / source_file).resolve())
+    # Try current working directory
+    elif Path(source_file).is_file():
+        source_file_resolved = str(Path(source_file).resolve())
+    # Try relative to output_dir parent
+    elif (output_dir_path.parent / source_file).is_file():
+        source_file_resolved = str((output_dir_path.parent / source_file).resolve())
     
     if not source_file_resolved or not os.path.isfile(source_file_resolved):
         st.warning(f"⚠️ Source file not found: {source_file}. The analysis will use pre-computed results only. To enable full analysis, ensure the source file is available.")
