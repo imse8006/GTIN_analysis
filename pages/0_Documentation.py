@@ -63,12 +63,12 @@ def main():
        - `50000000000009`, `60000000000009`, `70000000000009`, `80000000000009`
     3. **NON_NUMERIC** : Contains non-numeric characters
     4. **INVALID_LENGTH** : Length different from 8, 13 or 14 digits
-    5. **SUSPECT** : Valid format but invalid GS1 check digit
+    5. **INVALID** : Valid format but invalid GS1 check digit (or other validation failures)
     6. **GTIN_8, GTIN_13, GTIN_14** : Valid GTINs according to their length
     
     **GS1 check digit validation:**
     - For GTIN-13 and GTIN-14, verification of the GS1 algorithm
-    - If check digit is incorrect → marked as **SUSPECT**
+    - If check digit is incorrect → marked as **INVALID**
     """)
 
     # 2. Quality Analysis
@@ -302,7 +302,7 @@ def main():
     
     **Result** :
     - If check digit correct → Valid GTIN
-    - If check digit incorrect → Marked as **SUSPECT**
+    - If check digit incorrect → Marked as **INVALID**
     """)
 
     # Footer
