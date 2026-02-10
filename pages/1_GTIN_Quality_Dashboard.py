@@ -275,10 +275,12 @@ def has_valid_gs1_check_digit(gtin: str, length: int) -> bool:
     body, check_digit = digits[:-1], digits[-1]
     
     total = 0
-    for i, d in enumerate(reversed(body), start=1):
+    for i, d in enumerate(body, start=1):
         if length == 13:
+            # GTIN-13: odd positions (1,3,5...) * 1, even positions (2,4,6...) * 3
             multiplier = 1 if i % 2 == 1 else 3
         else:
+            # GTIN-14: odd positions (1,3,5...) * 3, even positions (2,4,6...) * 1
             multiplier = 3 if i % 2 == 1 else 1
         total += d * multiplier
     

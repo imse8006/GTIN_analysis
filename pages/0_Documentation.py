@@ -291,14 +291,14 @@ def main():
     **Validation algorithm:**
     
     1. Take body digits (all except the last)
-    2. Multiply alternately by 1 and 3 starting from the right
+    2. Multiply alternately by 1 and 3 starting from the **left** (standard GS1 algorithm)
     3. Sum all results
     4. Calculate : `(10 - (sum % 10)) % 10`
     5. Compare with the last digit (check digit)
     
     **Rules according to length:**
-    - **GTIN-13** : Multiply by 1 the odd positions (starting from the right)
-    - **GTIN-14** : Multiply by 1 the even positions (starting from the right)
+    - **GTIN-13** : Multiply by 1 the odd positions (1, 3, 5...), by 3 the even positions (2, 4, 6...), counting from the **left**
+    - **GTIN-14** : Multiply by 3 the odd positions (1, 3, 5...), by 1 the even positions (2, 4, 6...), counting from the **left**
     
     **Result** :
     - If check digit correct → Valid GTIN

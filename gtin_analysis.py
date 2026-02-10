@@ -74,16 +74,16 @@ def has_valid_gs1_check_digit(gtin: str, length: int) -> bool:
     digits = [int(d) for d in gtin]
     body, check_digit = digits[:-1], digits[-1]
     
-    # GS1 check digit: from right to left on body
+    # GS1 check digit: from left to right on body (standard GS1 algorithm)
     # For GTIN-13: odd positions (1,3,5...) * 1, even positions (2,4,6...) * 3
     # For GTIN-14: odd positions (1,3,5...) * 3, even positions (2,4,6...) * 1
     total = 0
-    for i, d in enumerate(reversed(body), start=1):
+    for i, d in enumerate(body, start=1):
         if length == 13:
-            # GTIN-13: odd * 1, even * 3
+            # GTIN-13: odd positions (1,3,5...) * 1, even positions (2,4,6...) * 3
             multiplier = 1 if i % 2 == 1 else 3
         else:  # GTIN-14
-            # GTIN-14: odd * 3, even * 1
+            # GTIN-14: odd positions (1,3,5...) * 3, even positions (2,4,6...) * 1
             multiplier = 3 if i % 2 == 1 else 1
         total += d * multiplier
     
