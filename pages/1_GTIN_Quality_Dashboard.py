@@ -502,6 +502,45 @@ def main():
         else:
             st.metric("Generics (Brand ≠ EUPCKER)", "N/A", help="Column Brand not found")
     
+    # Sample downloads for Invalid and Generic GTINs
+    if total_invalid > 0 or total_generic > 0:
+        st.markdown('<div style="margin-top: 1rem;"></div>', unsafe_allow_html=True)
+        col_inv, col_gen = st.columns(2)
+        
+        with col_inv:
+            if total_invalid > 0:
+                invalid_df = df_filtered[df_filtered["gtin_status"] == "INVALID"].copy()
+                # Sample: take first 1000 records or all if less
+                sample_size_inv = min(1000, len(invalid_df))
+                invalid_sample = invalid_df.head(sample_size_inv)
+                # Select relevant columns for export
+                export_cols_inv = [c for c in ["Legal Entity", "SUPC", "Local Product Description", gtin_col, "gtin_outer_normalized", "gtin_status"] if c in invalid_sample.columns]
+                st.download_button(
+                    f"📥 Download Invalid GTINs Sample ({sample_size_inv:,} records)",
+                    data=to_excel_bytes(invalid_sample[export_cols_inv]),
+                    file_name=f"invalid_gtins_sample_{extract_date}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="dl_invalid_sample",
+                    use_container_width=True
+                )
+        
+        with col_gen:
+            if total_generic > 0:
+                generic_df = df_filtered[df_filtered["gtin_status"] == "GENERIC"].copy()
+                # Sample: take first 1000 records or all if less
+                sample_size_gen = min(1000, len(generic_df))
+                generic_sample = generic_df.head(sample_size_gen)
+                # Select relevant columns for export
+                export_cols_gen = [c for c in ["Legal Entity", "SUPC", "Local Product Description", gtin_col, "gtin_outer_normalized", "gtin_status"] if c in generic_sample.columns]
+                st.download_button(
+                    f"📥 Download Generic GTINs Sample ({sample_size_gen:,} records)",
+                    data=to_excel_bytes(generic_sample[export_cols_gen]),
+                    file_name=f"generic_gtins_sample_{extract_date}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="dl_generic_sample",
+                    use_container_width=True
+                )
+    
     # Analysis by Legal Entity
     st.markdown('<div class="section-header">Analysis by Legal Entity</div>', unsafe_allow_html=True)
     
