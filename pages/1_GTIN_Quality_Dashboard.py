@@ -416,7 +416,10 @@ def main():
     
     col1, col2 = st.columns([4, 1])
     with col1:
-        # Handle reset buttons first
+        selected_entities = st.multiselect("**Select Legal Entities**", legal_entities, default=st.session_state.selected_entities_quality, help="Select one or more Legal Entities to analyze", key="quality_entities")
+        st.session_state.selected_entities_quality = selected_entities
+    with col2:
+        st.markdown('<div style="padding-top: 1.5rem;">', unsafe_allow_html=True)
         if st.button("Reset to All", use_container_width=True, key="quality_reset_all"):
             st.session_state.selected_entities_quality = legal_entities
             st.session_state.quality_entities = legal_entities
@@ -425,11 +428,6 @@ def main():
             st.session_state.selected_entities_quality = []
             st.session_state.quality_entities = []
             st.rerun()
-        
-        selected_entities = st.multiselect("**Select Legal Entities**", legal_entities, default=st.session_state.selected_entities_quality, help="Select one or more Legal Entities to analyze", key="quality_entities")
-        st.session_state.selected_entities_quality = selected_entities
-    with col2:
-        st.markdown('<div style="padding-top: 1.5rem;">', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
