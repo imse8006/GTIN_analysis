@@ -1,0 +1,40 @@
+{
+  "total_rows": 144820,
+  "legal_entities": [
+    "Brakes",
+    "Classic_Drinks",
+    "Ekofisk",
+    "Fresh_Direct",
+    "Fruktservice",
+    "KFF",
+    "LAG",
+    "Medina",
+    "Menigo",
+    "Ready_Chef",
+    "Servicestyckarna",
+    "Sysco_France",
+    "Sysco_Northern_Ireland",
+    "Sysco_ROI"
+  ],
+  "entity_total_products": {
+    "Brakes": 32163,
+    "Classic_Drinks": 5847,
+    "Ekofisk": 704,
+    "Fresh_Direct": 4578,
+    "Fruktservice": 2258,
+    "KFF": 4111,
+    "LAG": 1191,
+    "Medina": 2987,
+    "Menigo": 42819,
+    "Ready_Chef": 1768,
+    "Servicestyckarna": 455,
+    "Sysco_France": 10490,
+    "Sysco_Northern_Ireland": 20002,
+    "Sysco_ROI": 15447
+  },
+  "total_valid": 91593,
+  "total_invalid": 2322,
+  "total_generic": 44901,
+  "total_placeholder": 6004,
+  "compliance_rate": 63.25
+}

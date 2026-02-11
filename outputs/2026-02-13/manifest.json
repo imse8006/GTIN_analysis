@@ -1,0 +1,8 @@
+{
+  "source_file": "all-products-prod-2026-02-13_15.30.30.xlsx",
+  "extract_date": "2026-02-13",
+  "total_rows": 144820,
+  "gtin_outer_col": "GTIN-Outer",
+  "gtin_inner_col": "GTIN-Inner",
+  "generic_gtin_col": "Generic GTIN"
+}
