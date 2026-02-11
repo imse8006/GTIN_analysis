@@ -74,7 +74,9 @@ def render_login_form(title: str, subtitle: str = "", password_key: str = "passw
     with ph.container():
         render_login_header(title, subtitle)
         st.text_input("Password", type="password", key=password_key, on_change=password_entered, label_visibility="visible")
-        if st.session_state.get(password_key) is not None and st.session_state.get("password_correct") is False:
+        # Only show error if password was actually entered and was incorrect
+        # Check if password_correct was explicitly set to False (not just missing)
+        if password_key in st.session_state and st.session_state.get(password_key) != "" and st.session_state.get("password_correct") is False:
             st.error("Incorrect password")
 
     if st.session_state.get("password_correct", False):
