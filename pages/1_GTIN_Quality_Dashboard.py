@@ -509,17 +509,15 @@ def main():
         with col_inv:
             if total_invalid > 0:
                 invalid_df = df_filtered[df_filtered["gtin_status"] == "INVALID"].copy()
-                # Sample: take first 1000 records or all if less
-                sample_size_inv = min(1000, len(invalid_df))
-                invalid_sample = invalid_df.head(sample_size_inv)
+                # Download ALL Invalid GTINs (not just sample)
                 # Select relevant columns for export
-                export_cols_inv = [c for c in ["Legal Entity", "SUPC", "Local Product Description", gtin_col, "gtin_outer_normalized", "gtin_status"] if c in invalid_sample.columns]
+                export_cols_inv = [c for c in ["Legal Entity", "SUPC", "Local Product Description", gtin_col, "gtin_outer_normalized", "gtin_status"] if c in invalid_df.columns]
                 st.download_button(
-                    f"📥 Download Invalid GTINs Sample ({sample_size_inv:,} records)",
-                    data=to_excel_bytes(invalid_sample[export_cols_inv]),
-                    file_name=f"invalid_gtins_sample_{extract_date}.xlsx",
+                    f"📥 Download All Invalid GTINs ({len(invalid_df):,} records)",
+                    data=to_excel_bytes(invalid_df[export_cols_inv]),
+                    file_name=f"invalid_gtins_all_{extract_date}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key="dl_invalid_sample",
+                    key="dl_invalid_all",
                     use_container_width=True
                 )
         
