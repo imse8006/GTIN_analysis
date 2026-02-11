@@ -502,7 +502,8 @@ def main():
             st.metric("Generics (Brand ≠ EUPCKER)", "N/A", help="Column Brand not found")
     
     # Downloads for Invalid, Generic, and Placeholder GTINs
-    if total_invalid > 0 or total_generic > 0 or total_blocked > 0:
+    # Only show download buttons when exactly ONE Legal Entity is selected
+    if len(selected_entities) == 1 and (total_invalid > 0 or total_generic > 0 or total_blocked > 0):
         st.markdown('<div style="margin-top: 1rem;"></div>', unsafe_allow_html=True)
         col_inv, col_gen, col_place = st.columns(3)
         
