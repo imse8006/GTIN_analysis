@@ -44,9 +44,10 @@ def main():
     3. [Duplicate Analysis](#doublons)
     4. [Generic GTINs](#generiques)
     5. [Placeholder GTINs](#placeholder)
-    6. [Suspect GTINs](#suspects)
-    7. [Valid GTINs](#valides)
-    8. [Generic GTIN vs Taxonomy Analysis](#generic-taxonomy)
+    6. [Invalid GTINs](#invalid)
+    7. [Suspect GTINs](#suspects)
+    8. [Valid GTINs](#valides)
+    9. [Generic GTIN vs Taxonomy Analysis](#generic-taxonomy)
     """
     st.markdown(toc)
 
@@ -181,8 +182,32 @@ def main():
     **Usage** : Identify products without a real GTIN assigned.
     """)
 
-    # 6. Suspect GTINs
-    st.markdown('<div class="section-header" id="suspects">6. Suspect GTINs</div>', unsafe_allow_html=True)
+    # 6. Invalid GTINs
+    st.markdown('<div class="section-header" id="invalid">6. Invalid GTINs</div>', unsafe_allow_html=True)
+    st.markdown("""
+    **Definition** : GTINs that do not meet the MDM validation rules and cannot be considered valid, generic, or placeholder.
+    
+    **A GTIN is marked as Invalid if any of the following applies:**
+    
+    1. **Missing or empty** : The GTIN field is null, empty, or cannot be normalized.
+    
+    2. **Non-numeric** : The value contains characters other than digits (letters, spaces, symbols).
+       - Example : `ABC123`, `12-345-678`
+    
+    3. **Invalid length** : The GTIN does not have 8, 13, or 14 digits.
+       - Valid lengths only : 8 (GTIN-8), 13 (GTIN-13 / EAN-13), 14 (GTIN-14)
+       - Example : `12345` (5 digits), `123456789012` (12 digits)
+    
+    4. **Invalid GS1 check digit** : For GTIN-13 and GTIN-14, the last digit (check digit) does not match the result of the GS1 Modulo 10 algorithm.
+       - Example : A GTIN-13 where the calculated check digit differs from the 13th digit.
+    
+    **Order of checks** : Placeholder and Generic are evaluated first; only if the GTIN is neither of those is it then checked for the above Invalid conditions.
+    
+    **Usage** : Identify products that need data correction (missing GTIN, typo, wrong length, or invalid check digit).
+    """)
+
+    # 7. Suspect GTINs
+    st.markdown('<div class="section-header" id="suspects">7. Suspect GTINs</div>', unsafe_allow_html=True)
     st.markdown("""
     **Definition** : GTINs with valid format but showing suspicious patterns.
     
@@ -202,8 +227,8 @@ def main():
     **Usage** : Identify GTINs that appear to be placeholders or data entry errors.
     """)
 
-    # 7. Valid GTINs
-    st.markdown('<div class="section-header" id="valides">7. Valid GTINs</div>', unsafe_allow_html=True)
+    # 8. Valid GTINs
+    st.markdown('<div class="section-header" id="valides">8. Valid GTINs</div>', unsafe_allow_html=True)
     st.markdown("""
     **Definition** : GTINs that pass all validations.
     
@@ -219,8 +244,8 @@ def main():
     - Distinguishes valid sharing (same GTIN, different entities) from problematic duplicates
     """)
 
-    # 8. Generic GTIN vs Taxonomy
-    st.markdown('<div class="section-header" id="generic-taxonomy">8. Generic GTIN vs Taxonomy Analysis</div>', unsafe_allow_html=True)
+    # 9. Generic GTIN vs Taxonomy
+    st.markdown('<div class="section-header" id="generic-taxonomy">9. Generic GTIN vs Taxonomy Analysis</div>', unsafe_allow_html=True)
     st.markdown("""
     **Page: Generic GTIN Analysis**
     
