@@ -422,11 +422,16 @@ def main():
         st.markdown('<div style="padding-top: 1.5rem;">', unsafe_allow_html=True)
         if st.button("Reset to All", use_container_width=True, key="quality_reset_all"):
             st.session_state.selected_entities_quality = legal_entities
-            st.session_state.quality_entities = legal_entities
+            # Update multiselect by clearing and setting the key
+            if "quality_entities" in st.session_state:
+                del st.session_state["quality_entities"]
+            st.session_state["quality_entities"] = legal_entities
             st.rerun()
         if st.button("Reset", use_container_width=True, key="quality_reset"):
             st.session_state.selected_entities_quality = []
-            st.session_state.quality_entities = []
+            # For empty list, we need to clear the multiselect key
+            if "quality_entities" in st.session_state:
+                del st.session_state["quality_entities"]
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
