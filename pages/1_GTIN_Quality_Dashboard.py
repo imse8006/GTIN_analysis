@@ -264,26 +264,23 @@ def normalize_gtin(value):
     return s
 
 
-def has_valid_gs1_check_digit(gtin: str, length: int) -> bool:
-    """Validate GS1 check digit for GTIN-13 or GTIN-14."""
-    if length == 8:
-        return True
-    if length not in (13, 14) or not gtin.isdigit():
+def has_valid_gs1_check_digit(gtin: str) -> bool:
+    """Valide la clé de contrôle GS1 pour tout format (GTIN-8, 12, 13, 14, SSCC)."""
+    if not gtin.isdigit() or len(gtin) not in (8, 12, 13, 14, 18):
         return False
-    
+
+    # On récupère les chiffres sous forme d'entiers
     digits = [int(d) for d in gtin]
-    body, check_digit = digits[:-1], digits[-1]
-    
+    body = digits[:-1]
+    check_digit = digits[-1]
+
+    # Règle universelle GS1 : 
+    # En partant de la droite (avant la clé), le multiplicateur est toujours 3, puis 1, puis 3...
     total = 0
-    for i, d in enumerate(body, start=1):
-        if length == 13:
-            # GTIN-13: odd positions (1,3,5...) * 1, even positions (2,4,6...) * 3
-            multiplier = 1 if i % 2 == 1 else 3
-        else:
-            # GTIN-14: odd positions (1,3,5...) * 3, even positions (2,4,6...) * 1
-            multiplier = 3 if i % 2 == 1 else 1
+    for i, d in enumerate(reversed(body)):
+        multiplier = 3 if i % 2 == 0 else 1
         total += d * multiplier
-    
+
     calc = (10 - (total % 10)) % 10
     return calc == check_digit
 
@@ -504,10 +501,10 @@ def main():
         else:
             st.metric("Generics (Brand ≠ EUPCKER)", "N/A", help="Column Brand not found")
     
-    # Sample downloads for Invalid and Generic GTINs
-    if total_invalid > 0 or total_generic > 0:
+    # Downloads for Invalid, Generic, and Placeholder GTINs
+    if total_invalid > 0 or total_generic > 0 or total_blocked > 0:
         st.markdown('<div style="margin-top: 1rem;"></div>', unsafe_allow_html=True)
-        col_inv, col_gen = st.columns(2)
+        col_inv, col_gen, col_place = st.columns(3)
         
         with col_inv:
             if total_invalid > 0:
@@ -529,17 +526,30 @@ def main():
         with col_gen:
             if total_generic > 0:
                 generic_df = df_filtered[df_filtered["gtin_status"] == "GENERIC"].copy()
-                # Sample: take first 1000 records or all if less
-                sample_size_gen = min(1000, len(generic_df))
-                generic_sample = generic_df.head(sample_size_gen)
+                # Download ALL Generic GTINs (not just sample)
                 # Select relevant columns for export
-                export_cols_gen = [c for c in ["Legal Entity", "SUPC", "Local Product Description", gtin_col, "gtin_outer_normalized", "gtin_status"] if c in generic_sample.columns]
+                export_cols_gen = [c for c in ["Legal Entity", "SUPC", "Local Product Description", gtin_col, "gtin_outer_normalized", "gtin_status"] if c in generic_df.columns]
                 st.download_button(
-                    f"📥 Download Generic GTINs Sample ({sample_size_gen:,} records)",
-                    data=to_excel_bytes(generic_sample[export_cols_gen]),
-                    file_name=f"generic_gtins_sample_{extract_date}.xlsx",
+                    f"📥 Download All Generic GTINs ({len(generic_df):,} records)",
+                    data=to_excel_bytes(generic_df[export_cols_gen]),
+                    file_name=f"generic_gtins_all_{extract_date}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key="dl_generic_sample",
+                    key="dl_generic_all",
+                    use_container_width=True
+                )
+        
+        with col_place:
+            if total_blocked > 0:
+                placeholder_df = df_filtered[df_filtered["gtin_status"].isin(["PLACEHOLDER", "BLOCKED"])].copy()
+                # Download ALL Placeholder GTINs
+                # Select relevant columns for export
+                export_cols_place = [c for c in ["Legal Entity", "SUPC", "Local Product Description", gtin_col, "gtin_outer_normalized", "gtin_status"] if c in placeholder_df.columns]
+                st.download_button(
+                    f"📥 Download All Placeholder GTINs ({len(placeholder_df):,} records)",
+                    data=to_excel_bytes(placeholder_df[export_cols_place]),
+                    file_name=f"placeholder_gtins_all_{extract_date}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key="dl_placeholder_all",
                     use_container_width=True
                 )
     
