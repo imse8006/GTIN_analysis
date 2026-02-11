@@ -694,10 +694,12 @@ def main():
         by_ent["% of Entity Generics"] = (by_ent["Generics (Brand ≠ EUPCKER)"] / by_ent["Total Generics"] * 100).round(2)
         by_ent = by_ent.sort_values("Generics (Brand ≠ EUPCKER)", ascending=False)
         st.dataframe(by_ent, use_container_width=True, hide_index=True)
+        # Download all records (not just summary table)
+        pc = [c for c in ["Legal Entity", "SUPC", "Local Product Description", brand_col, "OSD Classification", "gtin_outer_normalized"] if c in generics_non_eupcker.columns]
         st.download_button(
             "Download as Excel",
-            data=to_excel_bytes(by_ent),
-            file_name="generics_brand_not_eupcker_by_entity.xlsx",
+            data=to_excel_bytes(generics_non_eupcker[pc]),
+            file_name=f"generics_brand_not_eupcker_all_{extract_date}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="dl_generics_by_ent"
         )
