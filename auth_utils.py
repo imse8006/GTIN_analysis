@@ -54,6 +54,9 @@ def render_login_form(title: str, subtitle: str = "", password_key: str = "passw
     Full login flow: form in a placeholder, on success replace form with "Connexion réussie" then rerun
     so the password field is never left visible. Returns True if already logged in or just logged in.
     """
+    # Use a page-specific key to avoid conflicts between pages
+    auth_key = f"password_correct_{password_key}"
+    
     def password_entered():
         try:
             correct_password = st.secrets["PASSWORD"]
@@ -61,13 +64,17 @@ def render_login_form(title: str, subtitle: str = "", password_key: str = "passw
             correct_password = "OSDTeam123"
         entered = st.session_state.get(password_key, "")
         if entered == correct_password:
-            st.session_state["password_correct"] = True
+            st.session_state[auth_key] = True
+            # Clear the password field for security
             if password_key in st.session_state:
                 del st.session_state[password_key]
         else:
-            st.session_state["password_correct"] = False
+            # Only set to False if password was actually entered (not empty)
+            if entered != "":
+                st.session_state[auth_key] = False
 
-    if st.session_state.get("password_correct", False):
+    # Check if already authenticated
+    if st.session_state.get(auth_key, False):
         return True
 
     ph = st.empty()
@@ -75,11 +82,12 @@ def render_login_form(title: str, subtitle: str = "", password_key: str = "passw
         render_login_header(title, subtitle)
         st.text_input("Password", type="password", key=password_key, on_change=password_entered, label_visibility="visible")
         # Only show error if password was actually entered and was incorrect
-        # Check if password_correct was explicitly set to False (not just missing)
-        if password_key in st.session_state and st.session_state.get(password_key) != "" and st.session_state.get("password_correct") is False:
+        # Check if auth_key was explicitly set to False (not just missing)
+        if password_key in st.session_state and st.session_state.get(password_key) != "" and st.session_state.get(auth_key) is False:
             st.error("Incorrect password")
 
-    if st.session_state.get("password_correct", False):
+    # If authentication just succeeded, show success message and rerun
+    if st.session_state.get(auth_key, False):
         ph.empty()
         with ph.container():
             render_login_header(title, subtitle)
